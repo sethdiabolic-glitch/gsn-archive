@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { getArt, getPendingArt, isGsnAdmin, setArtStatus, submitArt, supabase, type Artwork, type ArtworkRating } from './lib/community';
 import { deleteArchiveEntry, loadArchive, saveArchiveEntry, seedArchive } from './lib/archive';
-import { Router as WouterRouter, useLocation } from 'wouter';
 import {
   Archive, ArrowLeft, ArrowRight, BookOpen, ChevronRight, CircleDot, Database,
   FileText, FolderArchive, Gauge, GitCompare, Layers3, Menu, Pencil, Plus,
@@ -46,6 +46,12 @@ const defaultTerms: LegalTerms = { content: 'These Terms of Use are maintained b
 const tierColors: Record<Tier, string> = {
   EX: '#ab82e8', S: '#ff3b45', A: '#e8a33d', B: '#d4b86a', C: '#65a7d8', D: '#57c29b', Undefined: '#9299a4',
 };
+
+function useLocation(): [string, (path: string) => void] {
+  const location = useRouterState({ select: (state) => state.location.pathname });
+  const navigate = useNavigate();
+  return [location, (path) => void navigate({ to: path })];
+}
 
 const defaultData: DatabaseState = {
   characters: [
@@ -205,7 +211,7 @@ function AppContent() {
     page === 'tier-list' ? 'Tier list' :
       page === 'compare' ? 'Compare' :
         page === 'terms' ? 'Terms of Use' :
-          page === 'editor' ? 'Local database' :
+          page === 'editor' ? 'Archive database' :
           page === 'community' ? 'Community art' :
             page === 'community-editor' ? 'Community moderation' :
               page === 'entry' ? 'Dossier' : activeCategory ? categoryMeta[activeCategory].label : 'Archive';
@@ -309,7 +315,7 @@ function HomePage({ data, navigate }: { data: DatabaseState; navigate: (path: st
         <Stat value={categories.length} label="Archive sectors" />
         <Stat value="v19.04" label="Current index" />
       </div>
-      <div className="section-head"><div><div className="eyebrow">Select a sector</div><h2>Archive sectors</h2></div><p>06 active channels / 01 local node</p></div>
+      <div className="section-head"><div><div className="eyebrow">Select a sector</div><h2>Archive sectors</h2></div><p>06 active channels</p></div>
       <div className="archive-grid">
         {categories.map((category, index) => {
           const meta = categoryMeta[category];
@@ -324,7 +330,6 @@ function HomePage({ data, navigate }: { data: DatabaseState; navigate: (path: st
         {[
           ['01', 'Numbers have context', 'A feat is more than a stat line. Read the surrounding conditions before scaling it.'],
           ['02', 'Undefined is honest', 'An empty tier means the file needs more evidence — not that the subject is weak.'],
-          ['03', 'Local means yours', 'Edit, expand, and curate the archive. Changes survive reloads on this device.'],
         ].map(([number, title, copy]) => <div className="stat-box" key={number}><div style={{ color: 'var(--red-bright)', font: '11px var(--font-mono)' }}>{number}</div><div style={{ marginTop: 15, font: '700 20px var(--font-display)', textTransform: 'uppercase' }}>{title}</div><div style={{ marginTop: 8, color: 'var(--muted)', fontSize: 12, lineHeight: 1.6 }}>{copy}</div></div>)}
       </div>
     </>
@@ -374,43 +379,65 @@ function TierListPage({ data, openEntry }: { data: DatabaseState; openEntry: (ca
   </>;
 }
 
-function ComparePage({ data, openEntry }: { data: DatabaseState; openEntry: (category: Category, name: string) => void }) {
-  const combatants = allEntries(data).filter(({ category }) => category !== 'appendix');
-  const [left, setLeft] = useState('');
-  const [right, setRight] = useState('');
-  const [confirmed, setConfirmed] = useState(false);
-  const [roll, setRoll] = useState<'left' | 'right' | null>(null);
-  const leftRecord = combatants.find(({ item }) => item.name === left);
-  const rightRecord = combatants.find(({ item }) => item.name === right);
-  useEffect(() => { if (!left && combatants[0]) setLeft(combatants[0].item.name); if (!right && combatants[1]) setRight(combatants[1].item.name); }, [combatants.length]);
-  const confirm = () => { if (!leftRecord || !rightRecord || left === right) return; setConfirmed(true); setRoll(null); };
-  const diceRoll = () => setRoll(Math.random() < 0.5 ? 'left' : 'right');
-  return <>
-    <div className="eyebrow" style={{ color: '#d93f7a' }}>Simulation chamber / maintenance</div>
-    <h1 className="display-title">Compare <em>combatants</em></h1>
-    <p className="lede">Comparison logic is currently under maintenance. Recommendations are being collected before the real comparison model is restored. For now, confirmed matchups use a neutral dice roll only.</p>
-    <div className="compare-layout compare-arena">
-      <CompareProfile record={leftRecord} label="A" selected={left} options={combatants} onChange={(value) => { setLeft(value); setConfirmed(false); setRoll(null); }} />
-      <CompareProfile record={rightRecord} label="B" selected={right} options={combatants} onChange={(value) => { setRight(value); setConfirmed(false); setRoll(null); }} />
-      <div className="versus"><span>VS</span></div>
-    </div>
-    <div className="compare-confirm"><button className="btn primary" type="button" disabled={!leftRecord || !rightRecord || left === right} onClick={confirm}><Check size={14} /> Confirm matchup</button>{left === right && <span>Select two different subjects.</span>}</div>
-    {confirmed && leftRecord && rightRecord && <div className="compare-result">
-      <div className="compare-head"><strong>{leftRecord.item.name} <span style={{ color: 'var(--faint)' }}>vs</span> {rightRecord.item.name}</strong><span>ROLL-ONLY TEST</span></div>
-      <div className="dice-stage">{roll ? <><div className={`roll-winner ${roll === 'left' ? 'winner-a' : 'winner-b'}`}>{roll === 'left' ? leftRecord.item.name : rightRecord.item.name}</div><p>The die landed for {roll === 'left' ? 'A' : 'B'}. This is a placeholder result, not a power assessment.</p><button className="btn ghost" onClick={diceRoll}>Roll again</button></> : <><div className="ready-mark">A <span>VS</span> B</div><p>Match confirmed. No stats or lore claims are being used yet.</p><button className="btn primary" onClick={diceRoll}>🎲 Roll</button></>}</div>
-      <div style={{ display: 'flex', justifyContent: 'center', gap: 8, padding: '0 16px 20px', flexWrap: 'wrap' }}><button className="btn ghost" type="button" onClick={() => openEntry(leftRecord.category, leftRecord.item.name)}>Open A dossier <ArrowRight size={14} /></button><button className="btn ghost" type="button" onClick={() => openEntry(rightRecord.category, rightRecord.item.name)}>Open B dossier <ArrowRight size={14} /></button></div>
-    </div>}
-  </>;
+type CombatantRef = { category: Category; name: string };
+
+function CombatantAvatar({ entry, size }: { entry: Entry; size: 'small' | 'big' }) {
+  return <div className={`gsn-av ${size}`}>{entry.image ? <img src={entry.image} alt={entry.name} /> : entry.name.charAt(0)}</div>;
 }
 
-function CompareProfile({ record, label, selected, options, onChange }: { record?: { item: Entry; category: Category }; label: string; selected: string; options: { item: Entry; category: Category }[]; onChange: (value: string) => void }) {
-  return <div className="fighter-picker profile-picker">
-    {record?.item.image ? <div className="profile-circle"><img src={record.item.image} alt={record.item.name} /></div> : <div className="profile-no-image">PROFILE IMAGE NOT SET</div>}
-    <div className="profile-label">COMBATANT {label}</div>
-    <strong>{record?.item.name || 'Select a subject'}</strong>
-    <select className="select-input" value={selected} onChange={(event) => onChange(event.target.value)} aria-label={`Select combatant ${label}`}>
-      {options.map(({ item, category }) => <option key={`${category}-${item.name}`} value={item.name}>{item.name}</option>)}
-    </select>
+function ComparePage({ data }: { data: DatabaseState; openEntry: (category: Category, name: string) => void }) {
+  const [, navigate] = useLocation();
+  const combatantCategories: Category[] = ['characters', 'heretics', 'raptures'];
+  const combatants = combatantCategories.flatMap((category) => data[category].map((item) => ({ item, category })));
+  const [selection, setSelection] = useState<{ a: CombatantRef | null; b: CombatantRef | null }>({ a: null, b: null });
+  const [picker, setPicker] = useState<'a' | 'b' | null>(null);
+  const [pending, setPending] = useState<CombatantRef | null>(null);
+  const [roll, setRoll] = useState<number | null>(null);
+  const find = (ref: CombatantRef | null) => ref ? combatants.find(({ item, category }) => category === ref.category && item.name === ref.name) : undefined;
+  const left = find(selection.a);
+  const right = find(selection.b);
+  const choose = () => {
+    if (!picker || !pending) return;
+    setSelection((current) => ({ ...current, [picker]: pending }));
+    setPicker(null);
+    setPending(null);
+    setRoll(Math.random());
+  };
+
+  if (picker) return <div className="gsn-upgrade-compare">
+    <button className="back-link" type="button" onClick={() => { setPicker(null); setPending(null); }}>← Return to comparison</button>
+    <div className="eyebrow compare-accent">Combatant selection / {picker === 'a' ? 'Alpha' : 'Beta'}</div>
+    <h1 className="display-title">Select <em>Combatant {picker.toUpperCase()}</em></h1>
+    <p className="lede">Five profiles per row. Select a profile, then confirm it.</p>
+    {combatantCategories.map((category) => <section key={category}>
+      <div className="picker-section-title">{categoryMeta[category].label}</div>
+      <div className="gsn-upgrade-picker">{combatants.filter((record) => record.category === category).map((record) => {
+        const ref = { category: record.category, name: record.item.name };
+        const taken = selection.a?.name === ref.name || selection.b?.name === ref.name;
+        const selected = pending?.category === ref.category && pending.name === ref.name;
+        return <button key={`${ref.category}-${ref.name}`} type="button" className={`gsn-upgrade-picker-card${taken ? ' disabled' : ''}${selected ? ' selected' : ''}`} onClick={() => setPending(ref)} disabled={taken}>
+          <CombatantAvatar entry={record.item} size="small" /><span>{record.item.name}</span>
+        </button>;
+      })}</div>
+    </section>)}
+    <div className="gsn-upgrade-confirm"><span>{pending ? <>Selected: <strong>{pending.name}</strong></> : 'Select a profile'}</span><button className="btn primary" type="button" disabled={!pending} onClick={choose}>Confirm combatant</button></div>
+  </div>;
+
+  const fighter = (side: 'a' | 'b', record: typeof left, label: string) => <div className="gsn-upgrade-fighter">
+    <div className="eyebrow">{label}</div>
+    {record ? <><CombatantAvatar entry={record.item} size="big" /><strong>{record.item.name}</strong><small>{categoryMeta[record.category].label.toUpperCase()}</small></> : <div className="empty-state">AWAITING SUBJECT</div>}
+    <button className="btn primary" type="button" onClick={() => { setPicker(side); setPending(selection[side]); }}>{record ? 'Change fighter' : 'Choose fighter'}</button>
+  </div>;
+  const winner = left && right && roll !== null ? (roll < .5 ? left : right) : undefined;
+  const loser = winner === left ? right : left;
+
+  return <div className="gsn-upgrade-compare">
+    <div className="eyebrow compare-accent">Simulation chamber / 1v1 / for fun</div>
+    <h1 className="display-title">Compare <em>combatants</em></h1>
+    <p className="lede">Pick two filed subjects and let the archive decide.</p>
+    <div className="notice-box"><p><strong>Heads up: </strong>for now Compare picks a random winner. It is just for fun, not a power scale. Real rankings live on the Tier List.</p><div className="row-actions"><button className="btn ghost" type="button" onClick={() => navigate('/community')}>Share an idea</button><button className="btn ghost" type="button" onClick={() => navigate('/tier-list')}>Open Tier List</button></div></div>
+    <div className="gsn-upgrade-arena">{fighter('a', left, 'COMBATANT A')}{fighter('b', right, 'COMBATANT B')}<div className="gsn-upgrade-vs"><span>VS</span></div></div>
+    {winner && loser && <div className="gsn-upgrade-result"><div className="gsn-upgrade-winner"><div className="crown" aria-hidden="true">♛</div><div className="word">Winner!</div><CombatantAvatar entry={winner.item} size="big" /><div className="name">{winner.item.name}</div><small>chosen at random</small></div><div className="gsn-upgrade-narrative">The archive rolled the dice and {winner.item.name} beat {loser.item.name}. It is a coin flip for now, so don’t start a war over it.</div><div className="gsn-upgrade-score"><button className="btn ghost" type="button" onClick={() => setRoll(Math.random())}>Roll again</button></div></div>}
   </div>;
 }
 
@@ -427,7 +454,7 @@ function DossierPage({ category, name, data, onBack, onEdit }: { category: Categ
     {entry.extra?.length ? <><div className="block-title">Additional measurements</div><div className="extra-grid">{entry.extra.map((item) => <div className="spec" key={item.label}><div className="spec-label">{item.label}</div><div className="spec-value">{item.value}</div></div>)}</div></> : null}
     {entry.hypothetical ? <><div className="block-title">Working hypothesis</div><div className="hypothesis"><ReferenceText text={entry.hypothetical} data={data} /></div></> : null}
     {entry.notes?.length ? <><div className="block-title">Notes</div><div className="archive-notes">{entry.notes.map((note, index) => <div className="archive-note" key={index}><span className="note-marker">{note.marker}</span><div><strong>{note.author || 'Community note'}</strong><p><ReferenceText text={note.text} data={data} /></p></div></div>)}</div></> : null}
-    <div className="block-title">Record note</div><p style={{ color: 'var(--muted)', font: '12px/1.7 var(--font-mono)' }}>This dossier is a community-maintained interpretation. Values are preserved locally and can be revised from the database editor.</p>
+    <div className="block-title">Record note</div><p style={{ color: 'var(--muted)', font: '12px/1.7 var(--font-mono)' }}>This dossier is a community-maintained interpretation. Approved records can be revised from the database editor.</p>
   </article>;
 }
 
@@ -435,7 +462,7 @@ function EditorPage({ data, onEdit, onDelete, onAdd }: { data: DatabaseState; on
   const [category, setCategory] = useState<Category>('characters');
   return <>
     <div className="eyebrow" style={{ color: 'var(--blue)' }}>Maintenance console / shared archive</div>
-    <h1 className="display-title">Local <em>database</em></h1>
+    <h1 className="display-title">Archive <em>database</em></h1>
     <p className="lede">Create, revise, and remove archive records from one control panel. With Supabase connected, approved changes are shared with the public site.</p>
     <div className="toolbar"><select className="select-input" value={category} onChange={(event) => setCategory(event.target.value as Category)} aria-label="Editor category" data-testid="select-editor-category">{categories.map((item) => <option key={item} value={item}>{categoryMeta[item].label}</option>)}</select><button className="btn primary" type="button" onClick={() => onAdd(category)} data-testid="button-add-entry"><Plus size={15} /> New entry</button></div>
     <div className="editor-list">{data[category].map((entry) => <div className="editor-row" key={entry.name}><div className="editor-row-main"><div className="editor-row-name">{entry.name}</div><div className="editor-row-meta">{entry.cls} / {entry.tier || 'Undefined'} / {entry.tag}</div></div><div className="row-actions"><button className="btn ghost" type="button" onClick={() => onEdit(category, entry)} data-testid={`button-edit-${entry.name.replaceAll(' ', '-').toLowerCase()}`}><Pencil size={13} /> Edit</button><button className="btn danger" type="button" onClick={() => onDelete(category, entry.name)} data-testid={`button-delete-${entry.name.replaceAll(' ', '-').toLowerCase()}`}><Trash2 size={13} /> Remove</button></div></div>)}</div>
@@ -556,7 +583,7 @@ function NotFound({ navigate }: { navigate: (path: string) => void }) {
 }
 
 export function GsnArenaApp() {
-  return <WouterRouter><AppContent /></WouterRouter>;
+  return <AppContent />;
 }
 
 function App() {
