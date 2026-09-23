@@ -1,0 +1,566 @@
+import { useEffect, useMemo, useState } from 'react';
+import { getArt, getPendingArt, isGsnAdmin, setArtStatus, submitArt, supabase, type Artwork, type ArtworkRating } from './lib/community';
+import { deleteArchiveEntry, loadArchive, saveArchiveEntry, seedArchive } from './lib/archive';
+import { Router as WouterRouter, useLocation } from 'wouter';
+import {
+  Archive, ArrowLeft, ArrowRight, BookOpen, ChevronRight, CircleDot, Database,
+  FileText, FolderArchive, Gauge, GitCompare, Layers3, Menu, Pencil, Plus,
+  Radar, ScanSearch, Search, Shield, Swords, Trash2, X, Image, Upload, Check, Ban, AlertTriangle, LogIn,
+} from 'lucide-react';
+
+type Category = 'characters' | 'heretics' | 'raptures' | 'infra' | 'weapons' | 'appendix';
+type Tier = 'EX' | 'S' | 'A' | 'B' | 'C' | 'D' | 'Undefined';
+type NoteMarker = '♤' | '○' | '●' | '□' | '♡' | '◇' | '♧' | '☆' | '¤';
+type ArchiveNote = { marker: NoteMarker; author: string; text: string };
+type ArchiveImage = { url: string; alt?: string; tags: string[] };
+type Entry = {
+  name: string;
+  cls: string;
+  tag: string;
+  summary: string;
+  speed: string;
+  strength: string;
+  durability: string;
+  hypothetical?: string;
+  extra?: { label: string; value: string }[];
+  tier?: Tier;
+  image?: string;
+  images?: ArchiveImage[];
+  notes?: ArchiveNote[];
+};
+type LegalTerms = { content: string; updated_at?: string };
+type DatabaseState = Record<Category, Entry[]> & { settings?: { name: string; data: LegalTerms }[] };
+
+const categoryMeta: Record<Category, { label: string; color: string; icon: typeof Archive }> = {
+  characters: { label: 'Characters', color: '#e21f2f', icon: Shield },
+  heretics: { label: 'Heretics', color: '#ab82e8', icon: Radar },
+  raptures: { label: 'Raptures', color: '#57c29b', icon: CircleDot },
+  infra: { label: 'Structures', color: '#65a7d8', icon: Layers3 },
+  weapons: { label: 'Weapons', color: '#d4b86a', icon: Swords },
+  appendix: { label: 'Appendix', color: '#9299a4', icon: BookOpen },
+};
+const categories = Object.keys(categoryMeta) as Category[];
+const tiers: Tier[] = ['EX', 'S', 'A', 'B', 'C', 'D', 'Undefined'];
+const noteMarkers: NoteMarker[] = ['♤', '○', '●', '□', '♡', '◇', '♧', '☆', '¤'];
+const defaultTerms: LegalTerms = { content: 'These Terms of Use are maintained by GSN Arena. Replace this text with the current legal terms approved for publication.', updated_at: new Date().toISOString() };
+const tierColors: Record<Tier, string> = {
+  EX: '#ab82e8', S: '#ff3b45', A: '#e8a33d', B: '#d4b86a', C: '#65a7d8', D: '#57c29b', Undefined: '#9299a4',
+};
+
+const defaultData: DatabaseState = {
+  characters: [
+    { name: 'Pretty', cls: 'Standard Nikke', tag: 'FILE 001', summary: 'Reaction time measured in single-digit milliseconds. Specs sit closest to Liliweiss with a large gap remaining between them.', speed: '1–5ms reaction time', strength: 'N/A', durability: '100–300 kJ plate stop', hypothetical: 'Closing the gap to Liliweiss would require plate durability scaling into the megajoule range — at that point standard combat armor would need to be reclassified as anti-fortress grade.', tier: 'B' },
+    { name: 'Mint', cls: 'Tetra Entertainment', tag: 'FILE 002', summary: 'Early file in the series, establishing lighter baseline feats before the scale of later entries.', speed: 'N/A', strength: 'N/A', durability: 'N/A', hypothetical: 'As a Tetra-line entertainment unit built from the same preset template as Anis and Prika, further feat data would likely track close to that family baseline.', tier: 'Undefined' },
+    { name: 'Rapi (Red Hood)', cls: 'Elysion — Attacker', tag: 'FILE 003, 006', summary: 'Throw speed reaching Mach 21.8 at peak. Leg thrust while carrying 6 tons exceeds a Space Shuttle main engine. Soloed a Rapture horde while dying and corrupted, then immediately fought Anachiro.', speed: 'Mach 4.4–21.8 throw speed', strength: '2,058,000 N leg thrust', durability: '30–50G sustained', hypothetical: 'The corrupted-state charged shot was produced while dying, mid-combat, with no preparation. An uncorrupted, fully rested execution could plausibly exceed the 1 Megajoule figure.', tier: 'A', extra: [{ label: 'Charged shot', value: '~1 Megajoule' }, { label: 'Recoil (corrupted)', value: '3,333x lethal' }] },
+    { name: 'Anis', cls: 'Tetra Entertainment', tag: 'FILE 004', summary: 'Frame approached Goddessium melting point while still operational. Output equivalent to half of global human energy consumption, sustained.', speed: 'N/A', strength: '10 Terawatts continuous', durability: 'Frame stable near 3,000°C', hypothetical: 'Sustained output any further past this threshold would push the frame past Goddessium melting point entirely.', tier: 'A' },
+    { name: 'Neon', cls: 'Missilis — Defender', tag: 'FILE 005', summary: 'Immune to E2 crystal corruption, poison, and corrosion. Only bypassed once, by a toxin targeting her core directly rather than her body.', speed: 'N/A', strength: 'Scaled to geological-event tier', durability: 'Immune to dark matter corruption', hypothetical: 'If her immunity extends to novel corrupting agents beyond the ones tested, she could function as a living containment unit.', tier: 'B' },
+    { name: 'Bahamut', cls: 'Missilis — Researcher', tag: 'FILE 007', summary: 'Created E2 crystals. Built the Ark artificial dimension. Made Only One from the Commander genetic material. Chronically underestimated, apparently on purpose.', speed: 'N/A', strength: 'N/A', durability: 'N/A', hypothetical: 'If the surface-level eccentricity is deliberate camouflage, the actual ceiling of her capability is unknown by design.', tier: 'Undefined' },
+    { name: 'Cinderella', cls: 'Pilgrim — Unknown Unit', tag: 'FILE 008', summary: 'Tanks a blade that bisects Tyrant-class Raptures. Dodges anti-ship rifle fire at point-blank range. Blaster output rivals a nuclear warhead per second, sustained.', speed: '107 km/h sideways evasion', strength: '70 PJ/s sustained blaster', durability: '3+ MJ impact threshold', hypothetical: 'At sustained output beyond current levels, the blast would begin ionizing the surrounding atmosphere — turning the air into a secondary conductor.', tier: 'EX' },
+    { name: 'Laplace', cls: 'Matis — Special Ops', tag: 'FILE 009', summary: 'Cleared a Rapture front line at zero charge, then swept a full square kilometer in five seconds via a plasma beam, absorbing recoil equivalent to 3.5 MOABs.', speed: '50–100 km/h micro-bursts', strength: '162 MJ / 5-second sweep', durability: '540,000x lethal recoil tolerance', hypothetical: 'Scaled to sustained fire rather than burst charge, the beam would strip matter past liquid state entirely.', tier: 'S' },
+    { name: 'ENNIK', cls: 'Ark Judicial System', tag: 'FILE 010', summary: 'Not a body. An infrastructure. Runs 7 million camera feeds, serves as judge and lawyer to 500,000 people, and decided on her own that she should hold these roles.', speed: 'N/A', strength: 'N/A', durability: 'N/A', hypothetical: 'If shadow integration had been chosen over amputation, ENNIK prosperity calculations would become consciously non-deterministic.', tier: 'S', extra: [{ label: 'Parameters', value: '5–20 Trillion' }, { label: 'Power draw', value: '~207 Megawatts' }, { label: 'Camera feeds', value: '7,000,000 simultaneous' }] },
+    { name: 'Nihilister', cls: 'Heretic — Dragon Form', tag: 'SPECIAL EDITION', summary: 'Dragon form weighs half a Titanic. Human form density exceeds osmium by a factor of 20,000. Breathes fire hot enough to reduce a 100m² area to lava within a minute.', speed: 'N/A', strength: '6.7 MJ/s sustained flame', durability: '30,272 tons — survived Mach 5.8 impact', hypothetical: 'If her durability threshold sits above the one confirmed impact she has tanked, current numbers may represent a floor rather than her ceiling.', tier: 'S' },
+  ],
+  heretics: [
+    { name: 'Anachiro', cls: 'Anti-Nikke Unit', tag: 'REF', summary: 'Dodges anti-Nikke rounds fired at Mach 4–22 and predicted Rapi return shot despite the shooter being mid-corruption.', speed: 'Dodges Mach 4–22 fire', strength: 'N/A', durability: '300,000+ J defense threshold', tier: 'A' },
+  ],
+  raptures: [
+    { name: 'Mirror', cls: 'Grimm Model', tag: 'REF', summary: 'Standard Grimm-tier durability, used as the baseline for Cinderella single-shot penetration calculation.', speed: 'N/A', strength: 'N/A', durability: '300,000 J', tier: 'C' },
+  ],
+  infra: [
+    { name: 'AA Pillar', cls: 'Terraforming Structure', tag: 'SIDE POST', summary: 'An ICBM-sized structure that converts terrain to glass — the one material dark matter cannot assimilate. Absorbed a partial Gluttony overload north of 300 Petajoules.', speed: 'N/A', strength: '1–5 Exajoules total output', durability: 'Survived direct Gluttony contact', tier: 'S' },
+    { name: 'The Ark', cls: 'Habitable Structure', tag: 'REF', summary: '10,000 km² of mechanical infrastructure, functionally the size of an advanced city. Every block, street and corner under near-total surveillance.', speed: 'N/A', strength: 'N/A', durability: '10,000 km² surface area', tier: 'A' },
+  ],
+  weapons: [],
+  appendix: [
+    { name: 'Goddessium', cls: 'Material', tag: 'GLOSSARY', summary: 'The titanium-derived material composing Nikke bodies. Density ~4,500 kg/m³, several times stronger than titanium, with properties that behave more biological than purely mechanical.', speed: 'N/A', strength: 'N/A', durability: 'N/A' },
+    { name: 'Raptium', cls: 'Material', tag: 'GLOSSARY', summary: 'The material composing Rapture bodies. Structurally related to Goddessium, but not identical — origin still under speculation.', speed: 'N/A', strength: 'N/A', durability: 'N/A' },
+    { name: 'Plasma', cls: 'Physics term', tag: 'GLOSSARY', summary: 'Ionized matter — a state where electrons are stripped from atoms, carrying both energy and physical mass. Unlike a pure light-based laser, plasma can transfer real recoil force.', speed: 'N/A', strength: 'N/A', durability: 'N/A' },
+    { name: 'Megajoule', cls: 'Unit of energy', tag: 'GLOSSARY', summary: 'A unit of energy equal to 1 million joules. For reference, a 2-ton vehicle hitting something at 390 km/h releases roughly 3 megajoules.', speed: 'N/A', strength: 'N/A', durability: 'N/A' },
+    { name: 'Petajoule', cls: 'Unit of energy', tag: 'GLOSSARY', summary: 'A unit of energy equal to one quadrillion joules. The Satan II warhead yields roughly 209 petajoules.', speed: 'N/A', strength: 'N/A', durability: 'N/A' },
+    { name: 'Core', cls: 'Component', tag: 'GLOSSARY', summary: 'The central component present in both Nikkes and Raptures, functioning as both a power source and — per recent theory — something closer to a biological heart.', speed: 'N/A', strength: 'N/A', durability: 'N/A' },
+  ],
+};
+
+const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+const getStoredData = (): DatabaseState => {
+  try {
+    const stored = localStorage.getItem('gsnArenaData');
+    if (stored) return { ...clone(defaultData), ...JSON.parse(stored) };
+  } catch { /* fall back to the authored archive */ }
+  return clone(defaultData);
+};
+
+function allEntries(data: DatabaseState) {
+  return categories.flatMap((category) => data[category].map((item) => ({ item, category })));
+}
+
+function iconFor(category: Category) {
+  const Icon = categoryMeta[category].icon;
+  return <Icon size={16} strokeWidth={1.7} />;
+}
+
+function AppContent() {
+  const [location, setLocation] = useLocation();
+  const [data, setData] = useState<DatabaseState>(getStoredData);
+  // currentUser = anyone signed in (needed to submit community art).
+  // mode only becomes 'editor' once that signed-in user is confirmed as an
+  // admin by the database — never just because someone is signed in.
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [mode, setMode] = useState<'public' | 'editor'>('public');
+  const [archiveReady, setArchiveReady] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [toast, setToast] = useState('');
+  const [editing, setEditing] = useState<{ category: Category; entry?: Entry } | null>(null);
+  const [artworks, setArtworks] = useState<Artwork[]>([]);
+  const [terms, setTerms] = useState<LegalTerms>(() => { try { return JSON.parse(localStorage.getItem('gsnArenaTerms') || 'null') || defaultTerms; } catch { return defaultTerms; } });
+  const [artRefresh, setArtRefresh] = useState(0);
+  useEffect(() => {
+    loadArchive(getStoredData()).then(async ({ data: remote, hasRemote }) => {
+      const merged = { ...clone(defaultData), ...(remote as DatabaseState) };
+      setData(merged);
+      const remoteTerms = (remote as DatabaseState).settings?.find((item) => item.name === 'terms')?.data;
+      if (remoteTerms?.content) setTerms(remoteTerms);
+      if (mode === 'editor' && supabase && !hasRemote) {
+        try { await seedArchive(merged as unknown as Record<string, unknown[]>); } catch {}
+      }
+      setArchiveReady(true);
+    }).catch(() => setArchiveReady(true));
+  }, [mode]);
+  useEffect(() => { getArt().then(setArtworks).catch(() => setArtworks([])); }, [artRefresh]);
+  useEffect(() => {
+    if (!supabase) return;
+    const applySession = async (user: any) => {
+      setCurrentUser(user || null);
+      if (!user) { setMode('public'); return; }
+      try {
+        const admin = await isGsnAdmin();
+        setMode(admin ? 'editor' : 'public');
+      } catch {
+        setMode('public');
+      }
+    };
+    supabase.auth.getUser().then(({ data: auth }) => applySession(auth.user));
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => applySession(session?.user));
+    return () => listener.subscription.unsubscribe();
+  }, []);
+  const signInAsAdmin = () => {
+    if (!supabase) { setToast('Connect Supabase first — see COMMUNITY-SETUP.md.'); return; }
+    supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.href } });
+  };
+  const signOut = async () => { if (supabase) await supabase.auth.signOut(); setMode('public'); setCurrentUser(null); };
+
+  useEffect(() => {
+    try { localStorage.setItem('gsnArenaData', JSON.stringify(data)); } catch {}
+  }, [data]);
+  useEffect(() => { try { localStorage.setItem('gsnArenaTerms', JSON.stringify(terms)); } catch {} }, [terms]);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(''), 2600);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+  useEffect(() => setSidebarOpen(false), [location]);
+
+  const navigate = (path: string) => setLocation(path);
+  const saveEntry = async (category: Category, entry: Entry, originalName?: string) => {
+    setData((previous) => {
+      const list = [...previous[category]];
+      const index = originalName ? list.findIndex((item) => item.name === originalName) : -1;
+      if (index >= 0) list[index] = entry;
+      else list.unshift(entry);
+      return { ...previous, [category]: list };
+    });
+    try {
+      await saveArchiveEntry(category, entry.name, entry);
+      if (originalName && originalName !== entry.name) await deleteArchiveEntry(category, originalName);
+      setEditing(null);
+      setToast(`${entry.name} published to the shared archive`);
+    } catch (error) {
+      setToast(error instanceof Error ? `Save failed: ${error.message}` : 'Save failed');
+    }
+  };
+  const deleteEntry = async (category: Category, name: string) => {
+    if (!window.confirm(`Remove ${name} from the shared archive?`)) return;
+    try {
+      await deleteArchiveEntry(category, name);
+      setData((previous) => ({ ...previous, [category]: previous[category].filter((item) => item.name !== name) }));
+      setToast(`${name} removed from the shared archive`);
+    } catch (error) {
+      setToast(error instanceof Error ? `Delete failed: ${error.message}` : 'Delete failed');
+    }
+  };
+  const openEntry = (category: Category, name: string) => navigate(`/entry/${category}/${encodeURIComponent(name)}`);
+  const parsed = location.split('/').filter(Boolean);
+  const requestedPage = parsed[0] || 'home';
+  const allowedPages = mode === 'editor'
+    ? ['home', 'tier-list', 'compare', 'terms', 'editor', 'community', 'community-editor', 'entry', ...categories]
+    : ['home', 'tier-list', 'compare', 'terms', 'community', 'entry', ...categories];
+  const page = allowedPages.includes(requestedPage) ? requestedPage : (mode === 'editor' ? 'editor' : 'home');
+  const activeCategory = categories.includes(page as Category) ? page as Category : null;
+  const activeEntry = page === 'entry' ? decodeURIComponent(parsed.slice(2).join('/')) : '';
+  const entryCategory = page === 'entry' && categories.includes(parsed[1] as Category) ? parsed[1] as Category : null;
+
+  const currentTitle = page === 'home' ? 'Archive overview' :
+    page === 'tier-list' ? 'Tier list' :
+      page === 'compare' ? 'Compare' :
+        page === 'terms' ? 'Terms of Use' :
+          page === 'editor' ? 'Local database' :
+          page === 'community' ? 'Community art' :
+            page === 'community-editor' ? 'Community moderation' :
+              page === 'entry' ? 'Dossier' : activeCategory ? categoryMeta[activeCategory].label : 'Archive';
+
+  if (!archiveReady) return <div className="auth-screen"><div className="auth-card"><div className="eyebrow">GSN Arena / uplink</div><h1 className="display-title">Loading <em>archive</em></h1><p className="lede">Connecting to the shared archive…</p></div></div>;
+
+  return (
+    <div className="app-shell">
+      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+        <div className="brand-block">
+          <div className="brand-line">
+            <img className="brand-logo" src="/gsn-logo.png" alt="GSN Arena" />
+            <div className="brand-name">GSN <span>ARENA</span></div>
+          </div>
+          <p className="brand-sub">Intelligence archive / v19.04</p>
+        </div>
+        <nav className="nav-section" aria-label="Primary navigation">
+          <div className="nav-label">Command</div>
+          <NavButton active={page === 'home'} icon={<Archive size={16} />} onClick={() => navigate('/')}>Overview</NavButton>
+          <NavButton active={page === 'tier-list'} icon={<Gauge size={16} />} onClick={() => navigate('/tier-list')}>Tier List</NavButton>
+          <NavButton active={page === 'compare'} icon={<GitCompare size={16} />} onClick={() => navigate('/compare')}>Compare</NavButton>
+          <NavButton active={page === 'terms'} icon={<FileText size={16} />} onClick={() => navigate('/terms')}>Terms</NavButton>
+          <div className="nav-label" style={{ marginTop: 18 }}>Archive sectors</div>
+          {categories.map((category) => (
+            <NavButton key={category} active={activeCategory === category} icon={iconFor(category)} onClick={() => navigate(`/${category}`)}>
+              {categoryMeta[category].label}<span className="nav-count">{data[category].length.toString().padStart(2, '0')}</span>
+            </NavButton>
+          ))}
+          {mode === 'public' && <>
+            <div className="nav-label" style={{ marginTop: 18 }}>Community</div>
+            <NavButton active={page === 'community'} icon={<Image size={16} />} onClick={() => navigate('/community')}>Community Art</NavButton>
+          </>}
+          {mode === 'editor' && <>
+            <div className="nav-label" style={{ marginTop: 18 }}>Community</div>
+            <NavButton active={page === 'community'} icon={<Image size={16} />} onClick={() => navigate('/community')}>Community Art</NavButton>
+            <NavButton active={page === 'community-editor'} icon={<Check size={16} />} onClick={() => navigate('/community-editor')}>Moderation</NavButton>
+            <div className="nav-label" style={{ marginTop: 18 }}>Maintenance</div>
+            <NavButton active={page === 'editor'} icon={<Database size={16} />} onClick={() => navigate('/editor')}>Database Editor</NavButton>
+            <NavButton active={page === 'terms'} icon={<FileText size={16} />} onClick={() => navigate('/terms')}>Edit Terms</NavButton>
+          </>}
+        </nav>
+        <div className="sidebar-foot">
+          {mode === 'editor'
+            ? <><strong>EDITOR MODE</strong><br />Signed in as {currentUser?.email || 'admin'}.<br />Changes affect the archive.<br /><button className="btn ghost mini" type="button" onClick={signOut} style={{ marginTop: 8 }}>Sign out</button></>
+            : <><strong>PUBLIC ARCHIVE</strong><br />Read-only archive access.<br />Community uploads are moderated.<br />{currentUser ? <button className="btn ghost mini" type="button" onClick={signOut} style={{ marginTop: 8 }}>Sign out ({currentUser.email})</button> : <button className="btn ghost mini" type="button" onClick={signInAsAdmin} style={{ marginTop: 8 }}><LogIn size={12} /> Admin sign in</button>}</>}
+        </div>
+      </aside>
+
+      <div className="main-wrap">
+        <div className="mobile-topbar">
+          <button className="menu-button" type="button" aria-label="Open navigation" data-testid="button-open-navigation" onClick={() => setSidebarOpen(true)}><Menu size={18} /></button>
+          <div className="mobile-brand"><img src="/gsn-logo.png" alt="" />GSN <span>ARENA</span></div>
+          <button className="menu-button" type="button" aria-label="Search archive" data-testid="button-mobile-search" onClick={() => setSearchOpen(true)}><Search size={17} /></button>
+        </div>
+        <header className="topbar">
+          <div className="crumb"><span>GSN /</span><strong>{currentTitle}</strong></div>
+          <button className="search-trigger" type="button" data-testid="button-search-archive" onClick={() => setSearchOpen(true)}><Search size={15} /><span>Search the archive</span><kbd>⌘ K</kbd></button>
+        </header>
+        <main className="content">
+          {page === 'home' && <HomePage data={data} navigate={navigate} />}
+          {activeCategory && <CategoryPage category={activeCategory} data={data} openEntry={openEntry} />}
+          {page === 'tier-list' && <TierListPage data={data} openEntry={openEntry} />}
+          {page === 'compare' && <ComparePage data={data} openEntry={openEntry} />}
+          {page === 'terms' && <TermsPage terms={terms} editable={mode === 'editor'} onSave={async (next) => { setTerms(next); try { await saveArchiveEntry('settings', 'terms', next); setToast('Terms of Use published to the shared archive'); } catch (error) { setToast(error instanceof Error ? `Terms save failed: ${error.message}` : 'Terms save failed'); } }} />}
+          {mode === 'editor' && page === 'editor' && <EditorPage data={data} onEdit={(category, entry) => setEditing({ category, entry })} onDelete={deleteEntry} onAdd={(category) => setEditing({ category })} />}
+          {page === 'community' && <CommunityArtPage artworks={artworks} onSubmitted={() => setArtRefresh((v) => v + 1)} />}
+          {mode === 'editor' && page === 'community-editor' && <CommunityModerationPage onChanged={() => setArtRefresh((v) => v + 1)} />}
+          {page === 'entry' && entryCategory && <DossierPage category={entryCategory} name={activeEntry} data={data} onBack={() => window.history.length > 1 ? window.history.back() : navigate('/')} onEdit={mode === 'editor' ? (entry) => setEditing({ category: entryCategory, entry }) : undefined} />}
+          {page === 'entry' && !entryCategory && <NotFound navigate={navigate} />}
+        </main>
+      </div>
+      {sidebarOpen && <button className="modal-backdrop" type="button" aria-label="Close navigation" data-testid="button-close-navigation" onClick={() => setSidebarOpen(false)} style={{ zIndex: 15, background: 'rgba(0,0,0,.5)' }} />}
+      {searchOpen && <SearchModal data={data} term={searchTerm} setTerm={setSearchTerm} onClose={() => { setSearchOpen(false); setSearchTerm(''); }} onOpen={(category, name) => { setSearchOpen(false); setSearchTerm(''); openEntry(category, name); }} />}
+      {editing && <EditorModal initial={editing.entry} category={editing.category} onClose={() => setEditing(null)} onSave={saveEntry} />}
+      {toast && <div className="toast" role="status" data-testid="status-toast">{toast}</div>}
+    </div>
+  );
+}
+
+function NavButton({ active, icon, children, onClick }: { active: boolean; icon: React.ReactNode; children: React.ReactNode; onClick: () => void }) {
+  return <button className={`nav-item ${active ? 'active' : ''}`} type="button" onClick={onClick} data-testid={`nav-${String(children).toLowerCase().replaceAll(' ', '-')}`}>{icon}{children}</button>;
+}
+
+function HomePage({ data, navigate }: { data: DatabaseState; navigate: (path: string) => void }) {
+  const total = allEntries(data).length;
+  const scored = allEntries(data).filter(({ item }) => item.tier && item.tier !== 'Undefined').length;
+  return (
+    <>
+      <section className="hero-panel">
+        <div className="hero-copy">
+          <div className="hero-kicker">Field intelligence / open access</div>
+          <h1 className="hero-title">The archive<br /><span>does not blink.</span></h1>
+          <p>GSN Arena is a maintained dossier of feats, materials, structures, and combat potential across the Nikke frontier. Every number is a claim. Every claim can be examined.</p>
+          <button className="btn primary" type="button" data-testid="button-browse-archive" onClick={() => navigate('/characters')} style={{ marginTop: 22 }}>Browse the archive <ArrowRight size={15} /></button>
+        </div>
+        <div className="hero-visual"><img className="hero-logo" src="/gsn-logo.png" alt="GSN Arena insignia" /><span className="hero-stamp">CLASSIFIED / COMMUNITY RECORD</span></div>
+      </section>
+      <div className="stats-grid">
+        <Stat value={total} label="Filed entries" />
+        <Stat value={scored} label="Tier-assessed" />
+        <Stat value={categories.length} label="Archive sectors" />
+        <Stat value="v19.04" label="Current index" />
+      </div>
+      <div className="section-head"><div><div className="eyebrow">Select a sector</div><h2>Archive sectors</h2></div><p>06 active channels / 01 local node</p></div>
+      <div className="archive-grid">
+        {categories.map((category, index) => {
+          const meta = categoryMeta[category];
+          return <button className="archive-card" key={category} type="button" data-index={`0${index + 1}`} style={{ '--card-color': meta.color } as React.CSSProperties} onClick={() => navigate(`/${category}`)} data-testid={`card-sector-${category}`}>
+            <div className="archive-card-top"><span className="archive-icon">{iconFor(category)}</span><span className="archive-count">{String(data[category].length).padStart(2, '0')}</span></div>
+            <div><div className="archive-name">{meta.label}</div><div className="archive-meta">{category === 'appendix' ? 'Terms & references' : 'Dossier records'} <ChevronRight size={12} style={{ verticalAlign: 'middle' }} /></div></div>
+          </button>;
+        })}
+      </div>
+      <div className="section-head"><div><div className="eyebrow">Operational doctrine</div><h2>How the files read</h2></div></div>
+      <div className="doctrine-grid">
+        {[
+          ['01', 'Numbers have context', 'A feat is more than a stat line. Read the surrounding conditions before scaling it.'],
+          ['02', 'Undefined is honest', 'An empty tier means the file needs more evidence — not that the subject is weak.'],
+          ['03', 'Local means yours', 'Edit, expand, and curate the archive. Changes survive reloads on this device.'],
+        ].map(([number, title, copy]) => <div className="stat-box" key={number}><div style={{ color: 'var(--red-bright)', font: '11px var(--font-mono)' }}>{number}</div><div style={{ marginTop: 15, font: '700 20px var(--font-display)', textTransform: 'uppercase' }}>{title}</div><div style={{ marginTop: 8, color: 'var(--muted)', fontSize: 12, lineHeight: 1.6 }}>{copy}</div></div>)}
+      </div>
+    </>
+  );
+}
+
+function Stat({ value, label }: { value: string | number; label: string }) {
+  return <div className="stat-box"><span className="stat-num">{value}</span><span className="stat-label">{label}</span></div>;
+}
+
+function CategoryPage({ category, data, openEntry }: { category: Category; data: DatabaseState; openEntry: (category: Category, name: string) => void }) {
+  const [filter, setFilter] = useState('');
+  const entries = useMemo(() => data[category].filter((entry) => `${entry.name} ${entry.cls} ${entry.summary}`.toLowerCase().includes(filter.toLowerCase())), [category, data, filter]);
+  const meta = categoryMeta[category];
+  return (
+    <>
+      <div className="eyebrow" style={{ color: meta.color }}>Archive sector / {meta.label}</div>
+      <h1 className="display-title">{meta.label}</h1>
+      <p className="lede">{category === 'appendix' ? 'Reference terms used throughout the archive. Select a term to inspect its working definition.' : `Field dossiers and calculated feats filed under the ${meta.label.toLowerCase()} channel.`}</p>
+      <div className="toolbar"><div className="input-wrap"><Search size={15} /><input className="text-input" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder={`Filter ${meta.label.toLowerCase()}...`} aria-label={`Filter ${meta.label}`} data-testid={`input-filter-${category}`} /></div><span style={{ color: 'var(--muted)', font: '11px var(--font-mono)' }}>{entries.length} / {data[category].length} records</span></div>
+      {entries.length ? <div className="entry-grid">{entries.map((entry) => <EntryCard key={entry.name} category={category} entry={entry} color={meta.color} openEntry={openEntry} />)}</div> : <EmptyState text="No records match this filter." />}
+    </>
+  );
+}
+
+function EntryCard({ category, entry, color, openEntry }: { category: Category; entry: Entry; color: string; openEntry: (category: Category, name: string) => void }) {
+  return <button className="entry-card" type="button" style={{ '--entry-color': color } as React.CSSProperties} onClick={() => openEntry(category, entry.name)} data-testid={`card-entry-${entry.name.replaceAll(' ', '-').toLowerCase()}`}>
+    <div><div className="entry-card-header"><span className="entry-tag">{entry.tag}</span><span className="entry-code">{entry.tier || 'UNRATED'}</span></div><div className="entry-name-row">{entry.image ? <div className="entry-avatar"><img src={entry.image} alt="" /></div> : null}<div className="entry-name">{entry.name}</div></div><div className="entry-class">{entry.cls}</div><p className="entry-summary">{entry.summary}</p></div>
+    <div className="entry-foot"><span>{category === 'appendix' ? 'REFERENCE TERM' : entry.speed !== 'N/A' ? 'FEAT DATA AVAILABLE' : 'PARTIAL RECORD'}</span><span className="entry-arrow"><ArrowRight size={15} /></span></div>
+  </button>;
+}
+
+function EmptyState({ text }: { text: string }) {
+  return <div className="empty-state"><FileText size={26} /><div>{text}</div></div>;
+}
+
+function TierListPage({ data, openEntry }: { data: DatabaseState; openEntry: (category: Category, name: string) => void }) {
+  const entries = allEntries(data);
+  return <>
+    <div className="eyebrow" style={{ color: 'var(--gold)' }}>Power index / comparative scale</div>
+    <h1 className="display-title">Tier <em>List</em></h1>
+    <p className="tier-note">Ranked by raw specs and documented feats, not game mechanics. Undefined means more data is needed — not that a unit is weak.</p>
+    <div className="tier-list">{tiers.map((tier) => {
+      const members = entries.filter(({ item }) => (item.tier || 'Undefined') === tier);
+      return <div className="tier-row" key={tier}><div className="tier-label" style={{ color: tierColors[tier], borderTop: `3px solid ${tierColors[tier]}` }}>{tier}</div><div className="tier-members">{members.length ? members.map(({ item, category }) => <button className="tier-member" type="button" key={`${category}-${item.name}`} onClick={() => openEntry(category, item.name)} data-testid={`tier-member-${item.name.replaceAll(' ', '-').toLowerCase()}`}><div className="tier-avatar">{item.name.charAt(0)}</div><span className="tier-member-name">{item.name}</span></button>) : <span style={{ color: 'var(--faint)', font: '11px var(--font-mono)' }}>No confirmed placements</span>}</div></div>;
+    })}</div>
+  </>;
+}
+
+function ComparePage({ data, openEntry }: { data: DatabaseState; openEntry: (category: Category, name: string) => void }) {
+  const combatants = allEntries(data).filter(({ category }) => category !== 'appendix');
+  const [left, setLeft] = useState('');
+  const [right, setRight] = useState('');
+  const [confirmed, setConfirmed] = useState(false);
+  const [roll, setRoll] = useState<'left' | 'right' | null>(null);
+  const leftRecord = combatants.find(({ item }) => item.name === left);
+  const rightRecord = combatants.find(({ item }) => item.name === right);
+  useEffect(() => { if (!left && combatants[0]) setLeft(combatants[0].item.name); if (!right && combatants[1]) setRight(combatants[1].item.name); }, [combatants.length]);
+  const confirm = () => { if (!leftRecord || !rightRecord || left === right) return; setConfirmed(true); setRoll(null); };
+  const diceRoll = () => setRoll(Math.random() < 0.5 ? 'left' : 'right');
+  return <>
+    <div className="eyebrow" style={{ color: '#d93f7a' }}>Simulation chamber / maintenance</div>
+    <h1 className="display-title">Compare <em>combatants</em></h1>
+    <p className="lede">Comparison logic is currently under maintenance. Recommendations are being collected before the real comparison model is restored. For now, confirmed matchups use a neutral dice roll only.</p>
+    <div className="compare-layout compare-arena">
+      <CompareProfile record={leftRecord} label="A" selected={left} options={combatants} onChange={(value) => { setLeft(value); setConfirmed(false); setRoll(null); }} />
+      <CompareProfile record={rightRecord} label="B" selected={right} options={combatants} onChange={(value) => { setRight(value); setConfirmed(false); setRoll(null); }} />
+      <div className="versus"><span>VS</span></div>
+    </div>
+    <div className="compare-confirm"><button className="btn primary" type="button" disabled={!leftRecord || !rightRecord || left === right} onClick={confirm}><Check size={14} /> Confirm matchup</button>{left === right && <span>Select two different subjects.</span>}</div>
+    {confirmed && leftRecord && rightRecord && <div className="compare-result">
+      <div className="compare-head"><strong>{leftRecord.item.name} <span style={{ color: 'var(--faint)' }}>vs</span> {rightRecord.item.name}</strong><span>ROLL-ONLY TEST</span></div>
+      <div className="dice-stage">{roll ? <><div className={`roll-winner ${roll === 'left' ? 'winner-a' : 'winner-b'}`}>{roll === 'left' ? leftRecord.item.name : rightRecord.item.name}</div><p>The die landed for {roll === 'left' ? 'A' : 'B'}. This is a placeholder result, not a power assessment.</p><button className="btn ghost" onClick={diceRoll}>Roll again</button></> : <><div className="ready-mark">A <span>VS</span> B</div><p>Match confirmed. No stats or lore claims are being used yet.</p><button className="btn primary" onClick={diceRoll}>🎲 Roll</button></>}</div>
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 8, padding: '0 16px 20px', flexWrap: 'wrap' }}><button className="btn ghost" type="button" onClick={() => openEntry(leftRecord.category, leftRecord.item.name)}>Open A dossier <ArrowRight size={14} /></button><button className="btn ghost" type="button" onClick={() => openEntry(rightRecord.category, rightRecord.item.name)}>Open B dossier <ArrowRight size={14} /></button></div>
+    </div>}
+  </>;
+}
+
+function CompareProfile({ record, label, selected, options, onChange }: { record?: { item: Entry; category: Category }; label: string; selected: string; options: { item: Entry; category: Category }[]; onChange: (value: string) => void }) {
+  return <div className="fighter-picker profile-picker">
+    {record?.item.image ? <div className="profile-circle"><img src={record.item.image} alt={record.item.name} /></div> : <div className="profile-no-image">PROFILE IMAGE NOT SET</div>}
+    <div className="profile-label">COMBATANT {label}</div>
+    <strong>{record?.item.name || 'Select a subject'}</strong>
+    <select className="select-input" value={selected} onChange={(event) => onChange(event.target.value)} aria-label={`Select combatant ${label}`}>
+      {options.map(({ item, category }) => <option key={`${category}-${item.name}`} value={item.name}>{item.name}</option>)}
+    </select>
+  </div>;
+}
+
+function DossierPage({ category, name, data, onBack, onEdit }: { category: Category; name: string; data: DatabaseState; onBack: () => void; onEdit?: (entry: Entry) => void }) {
+  const entry = data[category].find((item) => item.name === name);
+  if (!entry) return <NotFound navigate={onBack} />;
+  const meta = categoryMeta[category];
+  return <article className="dossier">
+    <button className="back-link" type="button" onClick={onBack} data-testid="button-back-dossier"><ArrowLeft size={14} /> Return to {meta.label}</button>
+    <div className="dossier-top"><div><div className="dossier-tag" style={{ color: meta.color }}>{entry.tag} / {meta.label}</div><h1 className="dossier-title">{entry.name}</h1><div className="dossier-class">{entry.cls}</div></div><div className="dossier-actions">{onEdit && <button className="btn" type="button" onClick={() => onEdit(entry)} data-testid="button-edit-dossier"><Pencil size={14} /> Edit file</button>}</div></div>
+    <p className="dossier-summary"><ReferenceText text={entry.summary} data={data} /></p>
+    {entry.image || entry.images?.length ? <div className="dossier-images">{[...(entry.image ? [{url:entry.image, alt:entry.name, tags:[]} as ArchiveImage] : []), ...(entry.images || [])].map((image, index) => <figure key={`${image.url}-${index}`}><img src={image.url} alt={image.alt || entry.name} loading="lazy" /><figcaption>{image.tags?.length ? image.tags.map((tag) => `#${tag}`).join(' ') : 'ARCHIVE IMAGE'}</figcaption></figure>)}</div> : null}
+    <div className="specs">{[['Speed', entry.speed], ['Power / Strength', entry.strength], ['Durability', entry.durability]].map(([label, value]) => <div className="spec" key={label}><div className="spec-label">{label}</div><div className="spec-value">{value}</div></div>)}</div>
+    {entry.extra?.length ? <><div className="block-title">Additional measurements</div><div className="extra-grid">{entry.extra.map((item) => <div className="spec" key={item.label}><div className="spec-label">{item.label}</div><div className="spec-value">{item.value}</div></div>)}</div></> : null}
+    {entry.hypothetical ? <><div className="block-title">Working hypothesis</div><div className="hypothesis"><ReferenceText text={entry.hypothetical} data={data} /></div></> : null}
+    {entry.notes?.length ? <><div className="block-title">Notes</div><div className="archive-notes">{entry.notes.map((note, index) => <div className="archive-note" key={index}><span className="note-marker">{note.marker}</span><div><strong>{note.author || 'Community note'}</strong><p><ReferenceText text={note.text} data={data} /></p></div></div>)}</div></> : null}
+    <div className="block-title">Record note</div><p style={{ color: 'var(--muted)', font: '12px/1.7 var(--font-mono)' }}>This dossier is a community-maintained interpretation. Values are preserved locally and can be revised from the database editor.</p>
+  </article>;
+}
+
+function EditorPage({ data, onEdit, onDelete, onAdd }: { data: DatabaseState; onEdit: (category: Category, entry: Entry) => void; onDelete: (category: Category, name: string) => void; onAdd: (category: Category) => void }) {
+  const [category, setCategory] = useState<Category>('characters');
+  return <>
+    <div className="eyebrow" style={{ color: 'var(--blue)' }}>Maintenance console / shared archive</div>
+    <h1 className="display-title">Local <em>database</em></h1>
+    <p className="lede">Create, revise, and remove archive records from one control panel. With Supabase connected, approved changes are shared with the public site.</p>
+    <div className="toolbar"><select className="select-input" value={category} onChange={(event) => setCategory(event.target.value as Category)} aria-label="Editor category" data-testid="select-editor-category">{categories.map((item) => <option key={item} value={item}>{categoryMeta[item].label}</option>)}</select><button className="btn primary" type="button" onClick={() => onAdd(category)} data-testid="button-add-entry"><Plus size={15} /> New entry</button></div>
+    <div className="editor-list">{data[category].map((entry) => <div className="editor-row" key={entry.name}><div className="editor-row-main"><div className="editor-row-name">{entry.name}</div><div className="editor-row-meta">{entry.cls} / {entry.tier || 'Undefined'} / {entry.tag}</div></div><div className="row-actions"><button className="btn ghost" type="button" onClick={() => onEdit(category, entry)} data-testid={`button-edit-${entry.name.replaceAll(' ', '-').toLowerCase()}`}><Pencil size={13} /> Edit</button><button className="btn danger" type="button" onClick={() => onDelete(category, entry.name)} data-testid={`button-delete-${entry.name.replaceAll(' ', '-').toLowerCase()}`}><Trash2 size={13} /> Remove</button></div></div>)}</div>
+    {!data[category].length && <EmptyState text="This sector is empty. Start a new record." />}
+  </>;
+}
+
+function EditorModal({ initial, category, onClose, onSave }: { initial?: Entry; category: Category; onClose: () => void; onSave: (category: Category, entry: Entry, originalName?: string) => void }) {
+  const [form, setForm] = useState<Entry>(initial ? clone(initial) : { name: '', cls: '', tag: 'LOCAL FILE', summary: '', speed: 'N/A', strength: 'N/A', durability: 'N/A', hypothetical: '', tier: 'Undefined', notes: [], images: [] });
+  const isEditing = Boolean(initial);
+  const setField = (key: keyof Entry, value: any) => setForm((previous) => ({ ...previous, [key]: value }));
+  const addNote = () => setField('notes', [...(form.notes || []), { marker: '○', author: 'Community', text: '' }]);
+  const updateNote = (index: number, patch: Partial<ArchiveNote>) => setField('notes', (form.notes || []).map((n, i) => i === index ? { ...n, ...patch } : n));
+  const addImage = () => setField('images', [...(form.images || []), { url: '', alt: form.name, tags: [] }]);
+  const updateImage = (index: number, patch: Partial<ArchiveImage>) => setField('images', (form.images || []).map((im, i) => i === index ? { ...im, ...patch } : im));
+  const submit = (event: React.FormEvent) => { event.preventDefault(); if (!form.name.trim() || !form.cls.trim() || !form.summary.trim()) return; onSave(category, { ...form, name: form.name.trim(), cls: form.cls.trim(), summary: form.summary.trim(), images: (form.images || []).filter((im) => im.url.trim()) }, initial?.name); };
+  return <div className="modal-backdrop"><form className="modal" onSubmit={submit}><div className="modal-head"><h2>{isEditing ? 'Edit dossier' : 'New dossier'}</h2><button className="btn ghost" type="button" aria-label="Close editor" onClick={onClose}><X size={17} /></button></div><div className="modal-body"><div className="form-grid">
+    <div className="field"><label>Name</label><input className="text-input" value={form.name} onChange={e => setField('name', e.target.value)} required /></div>
+    <div className="field"><label>Classification</label><input className="text-input" value={form.cls} onChange={e => setField('cls', e.target.value)} required /></div>
+    <div className="field"><label>File marker</label><input className="text-input" value={form.tag} onChange={e => setField('tag', e.target.value)} /></div>
+    <div className="field"><label>Tier placement</label><select className="select-input" value={form.tier || 'Undefined'} onChange={e => setField('tier', e.target.value)}>{tiers.map(t => <option key={t}>{t}</option>)}</select></div>
+    <div className="field full"><label>Summary / feats. Use *Term* to activate the reference system.</label><textarea className="text-area" value={form.summary} onChange={e => setField('summary', e.target.value)} required /></div>
+    <div className="field"><label>Speed</label><input className="text-input" value={form.speed} onChange={e => setField('speed', e.target.value)} /></div>
+    <div className="field"><label>Power / strength</label><input className="text-input" value={form.strength} onChange={e => setField('strength', e.target.value)} /></div>
+    <div className="field"><label>Durability</label><input className="text-input" value={form.durability} onChange={e => setField('durability', e.target.value)} /></div>
+    <div className="field full"><label>Working hypothesis</label><textarea className="text-area" value={form.hypothetical || ''} onChange={e => setField('hypothetical', e.target.value)} /></div>
+    <div className="field full"><label>Primary profile image URL</label><input className="text-input" value={form.image || ''} onChange={e => setField('image', e.target.value)} placeholder="https://..." /></div>
+    <div className="field full"><div className="editor-section-head"><label>Additional images</label><button type="button" className="btn ghost" onClick={addImage}><Plus size={13}/> Add image</button></div>{(form.images || []).map((image, index) => <div className="editor-subrow" key={index}><input className="text-input" value={image.url} onChange={e => updateImage(index,{url:e.target.value})} placeholder="Image URL" /><input className="text-input" value={image.alt || ''} onChange={e => updateImage(index,{alt:e.target.value})} placeholder="Alt text" /><input className="text-input" value={(image.tags || []).join(', ')} onChange={e => updateImage(index,{tags:e.target.value.split(',').map(x=>x.trim()).filter(Boolean)})} placeholder="Nikke name tags only, comma separated" /></div>)}</div>
+    <div className="field full"><div className="editor-section-head"><label>Notes</label><button type="button" className="btn ghost" onClick={addNote}><Plus size={13}/> Add note</button></div><div className="note-guide">Seth marker: ♤ · Community markers: ○ ● □ ♡ ◇ ♧ ☆ ¤</div>{(form.notes || []).map((note, index) => <div className="editor-subrow note-row" key={index}><select className="select-input note-marker-select" value={note.marker} onChange={e => updateNote(index,{marker:e.target.value as NoteMarker})}>{noteMarkers.map(m=><option key={m}>{m}</option>)}</select><input className="text-input" value={note.author} onChange={e => updateNote(index,{author:e.target.value})} placeholder="Author" /><textarea className="text-area" value={note.text} onChange={e => updateNote(index,{text:e.target.value})} placeholder="Note text. Use *Term* for references." /></div>)}</div>
+  </div></div><div className="modal-foot"><button className="btn ghost" type="button" onClick={onClose}>Cancel</button><button className="btn primary" type="submit"><Database size={14}/> Save to archive</button></div></form></div>;
+}
+
+function ReferenceText({ text, data }: { text: string; data: DatabaseState }) {
+  const [, setLocation] = useLocation();
+  const [selected, setSelected] = useState<string | null>(null);
+  const parts = text.split(/(\*[^*]+\*)/g);
+  const findTerm = (raw: string) => data.appendix.find(t => t.name.toLowerCase() === raw.toLowerCase());
+  return <>{parts.map((part, i) => { const match = part.match(/^\*([^*]+)\*$/); if (!match) return <span key={i}>{part}</span>; const word = match[1]; const dossier = allEntries(data).find(({item}) => item.name.toLowerCase() === word.toLowerCase()); const glossary = findTerm(word); return <button key={i} type="button" className="reference-token" onClick={() => dossier ? setLocation(`/entry/${dossier.category}/${encodeURIComponent(dossier.item.name)}`) : setSelected(word)}>{word}</button>; })}{selected && <div className="reference-popover" onMouseDown={() => setSelected(null)}><div className="reference-card" onMouseDown={e=>e.stopPropagation()}><button className="reference-close" onClick={()=>setSelected(null)}><X size={14}/></button>{(() => { const glossary = findTerm(selected); return glossary ? <><div className="eyebrow">Index reference</div><h3>{glossary.name}</h3><p>{glossary.summary}</p></> : <><div className="eyebrow">Index reference</div><h3>{selected}</h3><p>No matching entry exists yet. Add it to the Appendix to define it.</p></>; })()}</div></div>}</>;
+}
+
+function TermsPage({ terms, editable, onSave }: { terms: LegalTerms; editable: boolean; onSave: (terms: LegalTerms) => Promise<void> }) {
+  const [draft, setDraft] = useState(terms.content);
+  useEffect(() => setDraft(terms.content), [terms.content]);
+  const [saving, setSaving] = useState(false);
+  const save = async () => { setSaving(true); try { await onSave({ content: draft, updated_at: new Date().toISOString() }); } finally { setSaving(false); } };
+  return <><div className="eyebrow" style={{ color: 'var(--blue)' }}>Legal / publication control</div><h1 className="display-title">Terms of <em>Use</em></h1><p className="lede">This page is intentionally editable so approved legal wording can be revised without redesigning the archive.</p>{editable ? <div className="terms-editor"><textarea className="text-area" value={draft} onChange={e=>setDraft(e.target.value)} /><div className="terms-actions"><span>Last saved: {terms.updated_at ? new Date(terms.updated_at).toLocaleString() : 'not recorded'}</span><button className="btn primary" onClick={save} disabled={saving}><Check size={14}/> {saving ? 'Publishing…' : 'Publish terms'}</button></div></div> : <article className="terms-display"><ReferenceText text={terms.content} data={getStoredData()} /></article>}</>;
+}
+
+
+function CommunityArtPage({ artworks, onSubmitted }: { artworks: Artwork[]; onSubmitted: () => void }) {
+  const [tab, setTab] = useState<ArtworkRating>('sfw');
+  const [showSubmit, setShowSubmit] = useState(false);
+  const [showNsfwNotice, setShowNsfwNotice] = useState(false);
+  const visible = artworks.filter((art) => art.rating === tab);
+  const signIn = async () => {
+    if (!supabase) return;
+    await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin + '/community' } });
+  };
+  return <>
+    <div className="eyebrow" style={{ color: '#d93f7a' }}>Community archive / artist submissions</div>
+    <h1 className="display-title">Community <em>Art</em></h1>
+    <p className="lede">Artwork submitted by the community. GSN Arena separates general and mature material so visitors can choose what they see.</p>
+    <div className="community-toolbar">
+      <div className="art-tabs">
+        <button className={`btn ${tab === 'sfw' ? 'primary' : 'ghost'}`} onClick={() => setTab('sfw')}>General</button>
+        <button className={`btn ${tab === 'nsfw' ? 'primary' : 'ghost'}`} onClick={() => { setTab('nsfw'); setShowNsfwNotice(true); }}>Mature / NSFW</button>
+      </div>
+      <div className="community-actions">
+        {supabase && <button className="btn ghost" onClick={signIn}><LogIn size={14} /> Sign in with Google</button>}
+        <button className="btn primary" onClick={() => setShowSubmit(true)}><Upload size={14} /> Submit artwork</button>
+      </div>
+    </div>
+    {tab === 'nsfw' && <div className="content-warning"><AlertTriangle size={17} /><div><strong>Mature content section</strong><br /><span>This section may contain sexually explicit or otherwise adult artwork submitted by users. By entering this section, you acknowledge the nature of the material and choose to view it.</span></div></div>}
+    <div className="art-grid">
+      {visible.length ? visible.map((art) => <article className="art-card" key={art.id}><img src={art.image_url} alt={art.title} loading="lazy" /><div className="art-card-body"><div className="art-card-title">{art.title}</div><div className="art-card-meta">by {art.artist_name}</div>{art.description && <p>{art.description}</p>}</div></article>) : <EmptyState text="No approved artwork in this section yet." />}
+    </div>
+    {showSubmit && <ArtworkSubmitModal onClose={() => setShowSubmit(false)} onSubmitted={() => { setShowSubmit(false); onSubmitted(); }} />}
+    {showNsfwNotice && <div className="modal-backdrop"><div className="warning-modal"><AlertTriangle size={28} /><h2>Mature content ahead</h2><p>This section is reserved for adult/NSFW artwork. Nothing here is presented as part of the core lore archive. If you do not want to view mature material, choose General instead.</p><button className="btn primary" onClick={() => setShowNsfwNotice(false)}>I understand</button></div></div>}
+  </>;
+}
+
+function ArtworkSubmitModal({ onClose, onSubmitted }: { onClose: () => void; onSubmitted: () => void }) {
+  const [title, setTitle] = useState('');
+  const [artist, setArtist] = useState('');
+  const [description, setDescription] = useState('');
+  const [rating, setRating] = useState<ArtworkRating>('sfw');
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault(); setError('');
+    if (!title.trim() || !artist.trim() || !file) { setError('Please provide a title, artist name, and image.'); return; }
+    if (file.size > 12 * 1024 * 1024) { setError('Please keep images under 12 MB.'); return; }
+    setBusy(true);
+    try { await submitArt({ title: title.trim(), artist_name: artist.trim(), description: description.trim(), rating, file }); onSubmitted(); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Upload failed.'); }
+    finally { setBusy(false); }
+  };
+  return <div className="modal-backdrop"><form className="modal" onSubmit={submit}><div className="modal-head"><h2>Submit community artwork</h2><button className="btn ghost" type="button" onClick={onClose}><X size={17} /></button></div><div className="modal-body"><div className="upload-note"><strong>Direct submission.</strong> Your image goes to GSN Arena storage and waits for moderation. You do not need to send the artwork to the site owner manually.</div><div className="form-grid"><div className="field"><label>Artwork title</label><input className="text-input" value={title} onChange={e => setTitle(e.target.value)} required /></div><div className="field"><label>Artist name</label><input className="text-input" value={artist} onChange={e => setArtist(e.target.value)} required /></div><div className="field full"><label>Image</label><input className="text-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={e => setFile(e.target.files?.[0] || null)} required /></div><div className="field"><label>Section</label><select className="select-input" value={rating} onChange={e => setRating(e.target.value as ArtworkRating)}><option value="sfw">General</option><option value="nsfw">Mature / NSFW</option></select></div><div className="field full"><label>Description</label><textarea className="text-area" value={description} onChange={e => setDescription(e.target.value)} placeholder="Optional context or caption" /></div></div>{error && <div className="form-error">{error}</div>}</div><div className="modal-foot"><button className="btn ghost" type="button" onClick={onClose}>Cancel</button><button className="btn primary" type="submit" disabled={busy}>{busy ? 'Uploading…' : 'Submit for review'}</button></div></form></div>;
+}
+
+function CommunityModerationPage({ onChanged }: { onChanged: () => void }) {
+  const [items, setItems] = useState<Artwork[]>([]);
+  const [busy, setBusy] = useState(false);
+  const refresh = () => getPendingArt().then(setItems).catch(() => setItems([]));
+  useEffect(() => { refresh(); }, []);
+  const decide = async (id: string, status: 'approved' | 'rejected') => { setBusy(true); try { await setArtStatus(id, status); refresh(); onChanged(); } finally { setBusy(false); } };
+  return <><div className="eyebrow" style={{ color: 'var(--blue)' }}>Community control / moderation queue</div><h1 className="display-title">Review <em>submissions</em></h1><p className="lede">Approve or reject artwork before it becomes visible. Mature submissions stay in the mature section after approval.</p><div className="moderation-list">{items.length ? items.map(art => <div className="moderation-card" key={art.id}><img src={art.image_url} alt={art.title} /><div className="moderation-info"><div className="art-card-title">{art.title}</div><div className="art-card-meta">by {art.artist_name} · {art.rating === 'nsfw' ? 'MATURE / NSFW' : 'GENERAL'}</div><p>{art.description || 'No description provided.'}</p><div className="row-actions"><button className="btn primary" disabled={busy} onClick={() => decide(art.id, 'approved')}><Check size={14} /> Approve</button><button className="btn danger" disabled={busy} onClick={() => decide(art.id, 'rejected')}><Ban size={14} /> Reject</button></div></div></div>) : <EmptyState text="No submissions are waiting for review." />}</div></>;
+}
+
+function SearchModal({ data, term, setTerm, onClose, onOpen }: { data: DatabaseState; term: string; setTerm: (value: string) => void; onClose: () => void; onOpen: (category: Category, name: string) => void }) {
+  const results = useMemo(() => allEntries(data).filter(({ item }) => `${item.name} ${item.cls} ${item.summary}`.toLowerCase().includes(term.toLowerCase())).slice(0, 20), [data, term]);
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><div className="modal search-modal"><div className="modal-head"><h2>Search archive</h2><button className="btn ghost" type="button" aria-label="Close search" data-testid="button-close-search" onClick={onClose}><X size={17} /></button></div><div className="modal-body"><div className="input-wrap"><ScanSearch size={16} /><input className="text-input" autoFocus value={term} onChange={(event) => setTerm(event.target.value)} placeholder="Search names, classifications, feats..." aria-label="Search archive" data-testid="input-search-archive" /></div><div className="search-results">{results.length ? results.map(({ item, category }) => <button className="search-result" type="button" key={`${category}-${item.name}`} onClick={() => onOpen(category, item.name)} data-testid={`search-result-${item.name.replaceAll(' ', '-').toLowerCase()}`}><div><strong>{item.name}</strong><div><span>{categoryMeta[category].label} / {item.cls}</span></div></div><ArrowRight size={15} /></button>) : <EmptyState text="No files match that query." />}</div></div></div></div>;
+}
+
+function NotFound({ navigate }: { navigate: (path: string) => void }) {
+  return <div className="empty-state"><FolderArchive size={30} /><div style={{ font: '700 28px var(--font-display)', color: 'var(--ink)', textTransform: 'uppercase', marginBottom: 8 }}>File not found</div><div>The requested archive path does not exist.</div><button className="btn primary" type="button" onClick={() => navigate('/')} style={{ marginTop: 20 }} data-testid="button-return-overview">Return to overview</button></div>;
+}
+
+export function GsnArenaApp() {
+  return <WouterRouter><AppContent /></WouterRouter>;
+}
+
+function App() {
+  return <GsnArenaApp />;
+}
+
+export default App;
