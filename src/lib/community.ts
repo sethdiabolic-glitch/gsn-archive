@@ -15,8 +15,8 @@ export type Artwork = {
   user_id?: string;
 };
 
-const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+const url = import.meta.env['VITE_SUPABASE_URL'] as string | undefined;
+const key = import.meta.env['VITE_SUPABASE_ANON_KEY'] as string | undefined;
 export const supabase: SupabaseClient | null = url && key ? createClient(url, key) : null;
 
 const DEMO_KEY = 'gsnArenaCommunityArt';
@@ -53,7 +53,7 @@ export async function submitArt(input: { title: string; artist_name: string; des
     return;
   }
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Please sign in with Google before submitting artwork.');
+  if (!user) throw new Error('Please sign in before submitting artwork.');
   const ext = input.file.name.split('.').pop()?.toLowerCase() || 'jpg';
   const path = `${user.id}/${crypto.randomUUID()}.${ext}`;
   const { error: uploadError } = await supabase.storage.from('community-art').upload(path, input.file, { upsert: false });

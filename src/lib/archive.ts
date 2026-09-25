@@ -6,8 +6,7 @@ export async function loadArchive<T>(fallback: T): Promise<{ data: T; hasRemote:
   if (error || !data?.length) return { data: fallback, hasRemote: false };
   const result: Record<string, unknown[]> = {};
   for (const row of data as Array<{ category: string; data: unknown }>) {
-    if (!result[row.category]) result[row.category] = [];
-    result[row.category].push(row.data);
+    (result[row.category] ??= []).push(row.data);
   }
   return { data: result as T, hasRemote: true };
 }

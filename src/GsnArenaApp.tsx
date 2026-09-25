@@ -151,9 +151,10 @@ function AppContent() {
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => applySession(session?.user));
     return () => listener.subscription.unsubscribe();
   }, []);
+  const [showAuth, setShowAuth] = useState(false);
   const signInAsAdmin = () => {
     if (!supabase) { setToast('Connect Supabase first — see COMMUNITY-SETUP.md.'); return; }
-    supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.href } });
+    setShowAuth(true);
   };
   const signOut = async () => { if (supabase) await supabase.auth.signOut(); setMode('public'); setCurrentUser(null); };
 
@@ -256,7 +257,7 @@ function AppContent() {
         <div className="sidebar-foot">
           {mode === 'editor'
             ? <><strong>EDITOR MODE</strong><br />Signed in as {currentUser?.email || 'admin'}.<br />Changes affect the archive.<br /><button className="btn ghost mini" type="button" onClick={signOut} style={{ marginTop: 8 }}>Sign out</button></>
-            : <><strong>PUBLIC ARCHIVE</strong><br />Read-only archive access.<br />Community uploads are moderated.<br />{currentUser ? <button className="btn ghost mini" type="button" onClick={signOut} style={{ marginTop: 8 }}>Sign out ({currentUser.email})</button> : <button className="btn ghost mini" type="button" onClick={signInAsAdmin} style={{ marginTop: 8 }}><LogIn size={12} /> Admin sign in</button>}</>}
+            : <><strong>PUBLIC ARCHIVE</strong><br />Read-only archive access.<br />Community uploads are moderated.<br />{currentUser ? <button className="btn ghost mini" type="button" onClick={signOut} style={{ marginTop: 8 }}>Sign out ({currentUser.email})</button> : <button className="btn ghost mini" type="button" onClick={signInAsAdmin} style={{ marginTop: 8 }}><LogIn size={12} /> Sign in</button>}</>}
         </div>
       </aside>
 
@@ -287,6 +288,7 @@ function AppContent() {
       {searchOpen && <SearchModal data={data} term={searchTerm} setTerm={setSearchTerm} onClose={() => { setSearchOpen(false); setSearchTerm(''); }} onOpen={(category, name) => { setSearchOpen(false); setSearchTerm(''); openEntry(category, name); }} />}
       {editing && <EditorModal initial={editing.entry} category={editing.category} onClose={() => setEditing(null)} onSave={saveEntry} />}
       {toast && <div className="toast" role="status" data-testid="status-toast">{toast}</div>}
+      {showAuth && <EmailAuthModal onClose={() => setShowAuth(false)} />}
     </div>
   );
 }
@@ -441,7 +443,7 @@ function ComparePage({ data }: { data: DatabaseState; openEntry: (category: Cate
   </div>;
 }
 
-function DossierPage({ category, name, data, onBack, onEdit }: { category: Category; name: string; data: DatabaseState; onBack: () => void; onEdit?: (entry: Entry) => void }) {
+function DossierPage({ category, name, data, onBack, onEdit }: { category: Category; name: string; data: DatabaseState; onBack: () => void; onEdit?: ((entry: Entry) => void) | undefined }) {
   const entry = data[category].find((item) => item.name === name);
   if (!entry) return <NotFound navigate={onBack} />;
   const meta = categoryMeta[category];
@@ -470,7 +472,7 @@ function EditorPage({ data, onEdit, onDelete, onAdd }: { data: DatabaseState; on
   </>;
 }
 
-function EditorModal({ initial, category, onClose, onSave }: { initial?: Entry; category: Category; onClose: () => void; onSave: (category: Category, entry: Entry, originalName?: string) => void }) {
+function EditorModal({ initial, category, onClose, onSave }: { initial?: Entry | undefined; category: Category; onClose: () => void; onSave: (category: Category, entry: Entry, originalName?: string) => void }) {
   const [form, setForm] = useState<Entry>(initial ? clone(initial) : { name: '', cls: '', tag: 'LOCAL FILE', summary: '', speed: 'N/A', strength: 'N/A', durability: 'N/A', hypothetical: '', tier: 'Undefined', notes: [], images: [] });
   const isEditing = Boolean(initial);
   const setField = (key: keyof Entry, value: any) => setForm((previous) => ({ ...previous, [key]: value }));
@@ -500,7 +502,52 @@ function ReferenceText({ text, data }: { text: string; data: DatabaseState }) {
   const [selected, setSelected] = useState<string | null>(null);
   const parts = text.split(/(\*[^*]+\*)/g);
   const findTerm = (raw: string) => data.appendix.find(t => t.name.toLowerCase() === raw.toLowerCase());
-  return <>{parts.map((part, i) => { const match = part.match(/^\*([^*]+)\*$/); if (!match) return <span key={i}>{part}</span>; const word = match[1]; const dossier = allEntries(data).find(({item}) => item.name.toLowerCase() === word.toLowerCase()); const glossary = findTerm(word); return <button key={i} type="button" className="reference-token" onClick={() => dossier ? setLocation(`/entry/${dossier.category}/${encodeURIComponent(dossier.item.name)}`) : setSelected(word)}>{word}</button>; })}{selected && <div className="reference-popover" onMouseDown={() => setSelected(null)}><div className="reference-card" onMouseDown={e=>e.stopPropagation()}><button className="reference-close" onClick={()=>setSelected(null)}><X size={14}/></button>{(() => { const glossary = findTerm(selected); return glossary ? <><div className="eyebrow">Index reference</div><h3>{glossary.name}</h3><p>{glossary.summary}</p></> : <><div className="eyebrow">Index reference</div><h3>{selected}</h3><p>No matching entry exists yet. Add it to the Appendix to define it.</p></>; })()}</div></div>}</>;
+  return <>{parts.map((part, i) => { const match = part.match(/^\*([^*]+)\*$/); if (!match) return <span key={i}>{part}</span>; const word = match[1] ?? ''; const dossier = allEntries(data).find(({item}) => item.name.toLowerCase() === word.toLowerCase()); const glossary = findTerm(word); return <button key={i} type="button" className="reference-token" onClick={() => dossier ? setLocation(`/entry/${dossier.category}/${encodeURIComponent(dossier.item.name)}`) : setSelected(word)}>{word}</button>; })}{selected && <div className="reference-popover" onMouseDown={() => setSelected(null)}><div className="reference-card" onMouseDown={e=>e.stopPropagation()}><button className="reference-close" onClick={()=>setSelected(null)}><X size={14}/></button>{(() => { const glossary = findTerm(selected); return glossary ? <><div className="eyebrow">Index reference</div><h3>{glossary.name}</h3><p>{glossary.summary}</p></> : <><div className="eyebrow">Index reference</div><h3>{selected}</h3><p>No matching entry exists yet. Add it to the Appendix to define it.</p></>; })()}</div></div>}</>;
+}
+
+function EmailAuthModal({ onClose }: { onClose: () => void }) {
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!supabase) return;
+    setBusy(true); setError(''); setMessage('');
+    try {
+      if (mode === 'signin') {
+        const { error: err } = await supabase.auth.signInWithPassword({ email, password });
+        if (err) throw err;
+        onClose();
+      } else {
+        const { error: err } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin } });
+        if (err) throw err;
+        setMessage('Account created. Check your email to confirm, then sign in.');
+        setMode('signin');
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Something went wrong. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return <div className="modal-backdrop"><form className="modal" onSubmit={submit}>
+    <div className="modal-head"><h2>{mode === 'signin' ? 'Sign in' : 'Create account'}</h2><button className="btn ghost" type="button" aria-label="Close sign in" onClick={onClose}><X size={17} /></button></div>
+    <div className="modal-body"><div className="form-grid">
+      <div className="field full"><label>Email</label><input className="text-input" type="email" value={email} onChange={e => setEmail(e.target.value)} required autoComplete="email" /></div>
+      <div className="field full"><label>Password</label><input className="text-input" type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} /></div>
+      {error && <div className="field full" style={{ color: 'var(--red)', font: '12px var(--font-mono)' }}>{error}</div>}
+      {message && <div className="field full" style={{ color: 'var(--blue)', font: '12px var(--font-mono)' }}>{message}</div>}
+      <div className="field full" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button className="btn primary" type="submit" disabled={busy}>{busy ? 'Working…' : mode === 'signin' ? 'Sign in' : 'Create account'}</button>
+        <button className="btn ghost" type="button" onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(''); setMessage(''); }}>
+          {mode === 'signin' ? 'Need an account? Sign up' : 'Have an account? Sign in'}
+        </button>
+      </div>
+    </div></div>
+  </form></div>;
 }
 
 function TermsPage({ terms, editable, onSave }: { terms: LegalTerms; editable: boolean; onSave: (terms: LegalTerms) => Promise<void> }) {
@@ -517,10 +564,8 @@ function CommunityArtPage({ artworks, onSubmitted }: { artworks: Artwork[]; onSu
   const [showSubmit, setShowSubmit] = useState(false);
   const [showNsfwNotice, setShowNsfwNotice] = useState(false);
   const visible = artworks.filter((art) => art.rating === tab);
-  const signIn = async () => {
-    if (!supabase) return;
-    await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin + '/community' } });
-  };
+  const [showAuth, setShowAuth] = useState(false);
+  const signIn = () => { if (supabase) setShowAuth(true); };
   return <>
     <div className="eyebrow" style={{ color: '#d93f7a' }}>Community archive / artist submissions</div>
     <h1 className="display-title">Community <em>Art</em></h1>
@@ -531,7 +576,7 @@ function CommunityArtPage({ artworks, onSubmitted }: { artworks: Artwork[]; onSu
         <button className={`btn ${tab === 'nsfw' ? 'primary' : 'ghost'}`} onClick={() => { setTab('nsfw'); setShowNsfwNotice(true); }}>Mature / NSFW</button>
       </div>
       <div className="community-actions">
-        {supabase && <button className="btn ghost" onClick={signIn}><LogIn size={14} /> Sign in with Google</button>}
+        {supabase && <button className="btn ghost" onClick={signIn}><LogIn size={14} /> Sign in</button>}
         <button className="btn primary" onClick={() => setShowSubmit(true)}><Upload size={14} /> Submit artwork</button>
       </div>
     </div>
@@ -540,6 +585,7 @@ function CommunityArtPage({ artworks, onSubmitted }: { artworks: Artwork[]; onSu
       {visible.length ? visible.map((art) => <article className="art-card" key={art.id}><img src={art.image_url} alt={art.title} loading="lazy" /><div className="art-card-body"><div className="art-card-title">{art.title}</div><div className="art-card-meta">by {art.artist_name}</div>{art.description && <p>{art.description}</p>}</div></article>) : <EmptyState text="No approved artwork in this section yet." />}
     </div>
     {showSubmit && <ArtworkSubmitModal onClose={() => setShowSubmit(false)} onSubmitted={() => { setShowSubmit(false); onSubmitted(); }} />}
+    {showAuth && <EmailAuthModal onClose={() => setShowAuth(false)} />}
     {showNsfwNotice && <div className="modal-backdrop"><div className="warning-modal"><AlertTriangle size={28} /><h2>Mature content ahead</h2><p>This section is reserved for adult/NSFW artwork. Nothing here is presented as part of the core lore archive. If you do not want to view mature material, choose General instead.</p><button className="btn primary" onClick={() => setShowNsfwNotice(false)}>I understand</button></div></div>}
   </>;
 }
