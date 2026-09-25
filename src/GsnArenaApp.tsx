@@ -257,7 +257,7 @@ function AppContent() {
         <div className="sidebar-foot">
           {mode === 'editor'
             ? <><strong>EDITOR MODE</strong><br />Signed in as {currentUser?.email || 'admin'}.<br />Changes affect the archive.<br /><button className="btn ghost mini" type="button" onClick={signOut} style={{ marginTop: 8 }}>Sign out</button></>
-            : <><strong>PUBLIC ARCHIVE</strong><br />Read-only archive access.<br />Community uploads are moderated.<br />{currentUser ? <button className="btn ghost mini" type="button" onClick={signOut} style={{ marginTop: 8 }}>Sign out ({currentUser.email})</button> : <button className="btn ghost mini" type="button" onClick={signInAsAdmin} style={{ marginTop: 8 }}><LogIn size={12} /> Admin sign in</button>}</>}
+            : <><strong>PUBLIC ARCHIVE</strong><br />Read-only archive access.<br />Community uploads are moderated.<br />{currentUser ? <button className="btn ghost mini" type="button" onClick={signOut} style={{ marginTop: 8 }}>Sign out ({currentUser.email})</button> : <button className="btn ghost mini" type="button" onClick={signInAsAdmin} style={{ marginTop: 8 }}><LogIn size={12} /> Sign in</button>}</>}
         </div>
       </aside>
 
@@ -503,6 +503,51 @@ function ReferenceText({ text, data }: { text: string; data: DatabaseState }) {
   const parts = text.split(/(\*[^*]+\*)/g);
   const findTerm = (raw: string) => data.appendix.find(t => t.name.toLowerCase() === raw.toLowerCase());
   return <>{parts.map((part, i) => { const match = part.match(/^\*([^*]+)\*$/); if (!match) return <span key={i}>{part}</span>; const word = match[1]; const dossier = allEntries(data).find(({item}) => item.name.toLowerCase() === word.toLowerCase()); const glossary = findTerm(word); return <button key={i} type="button" className="reference-token" onClick={() => dossier ? setLocation(`/entry/${dossier.category}/${encodeURIComponent(dossier.item.name)}`) : setSelected(word)}>{word}</button>; })}{selected && <div className="reference-popover" onMouseDown={() => setSelected(null)}><div className="reference-card" onMouseDown={e=>e.stopPropagation()}><button className="reference-close" onClick={()=>setSelected(null)}><X size={14}/></button>{(() => { const glossary = findTerm(selected); return glossary ? <><div className="eyebrow">Index reference</div><h3>{glossary.name}</h3><p>{glossary.summary}</p></> : <><div className="eyebrow">Index reference</div><h3>{selected}</h3><p>No matching entry exists yet. Add it to the Appendix to define it.</p></>; })()}</div></div>}</>;
+}
+
+function EmailAuthModal({ onClose }: { onClose: () => void }) {
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!supabase) return;
+    setBusy(true); setError(''); setMessage('');
+    try {
+      if (mode === 'signin') {
+        const { error: err } = await supabase.auth.signInWithPassword({ email, password });
+        if (err) throw err;
+        onClose();
+      } else {
+        const { error: err } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin } });
+        if (err) throw err;
+        setMessage('Account created. Check your email to confirm, then sign in.');
+        setMode('signin');
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Something went wrong. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return <div className="modal-backdrop"><form className="modal" onSubmit={submit}>
+    <div className="modal-head"><h2>{mode === 'signin' ? 'Sign in' : 'Create account'}</h2><button className="btn ghost" type="button" aria-label="Close sign in" onClick={onClose}><X size={17} /></button></div>
+    <div className="modal-body"><div className="form-grid">
+      <div className="field full"><label>Email</label><input className="text-input" type="email" value={email} onChange={e => setEmail(e.target.value)} required autoComplete="email" /></div>
+      <div className="field full"><label>Password</label><input className="text-input" type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} /></div>
+      {error && <div className="field full" style={{ color: 'var(--red)', font: '12px var(--font-mono)' }}>{error}</div>}
+      {message && <div className="field full" style={{ color: 'var(--blue)', font: '12px var(--font-mono)' }}>{message}</div>}
+      <div className="field full" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button className="btn primary" type="submit" disabled={busy}>{busy ? 'Working…' : mode === 'signin' ? 'Sign in' : 'Create account'}</button>
+        <button className="btn ghost" type="button" onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(''); setMessage(''); }}>
+          {mode === 'signin' ? 'Need an account? Sign up' : 'Have an account? Sign in'}
+        </button>
+      </div>
+    </div></div>
+  </form></div>;
 }
 
 function TermsPage({ terms, editable, onSave }: { terms: LegalTerms; editable: boolean; onSave: (terms: LegalTerms) => Promise<void> }) {
