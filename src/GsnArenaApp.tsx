@@ -443,7 +443,7 @@ function ComparePage({ data }: { data: DatabaseState; openEntry: (category: Cate
   </div>;
 }
 
-function DossierPage({ category, name, data, onBack, onEdit }: { category: Category; name: string; data: DatabaseState; onBack: () => void; onEdit?: (entry: Entry) => void }) {
+function DossierPage({ category, name, data, onBack, onEdit }: { category: Category; name: string; data: DatabaseState; onBack: () => void; onEdit?: ((entry: Entry) => void) | undefined }) {
   const entry = data[category].find((item) => item.name === name);
   if (!entry) return <NotFound navigate={onBack} />;
   const meta = categoryMeta[category];
@@ -472,7 +472,7 @@ function EditorPage({ data, onEdit, onDelete, onAdd }: { data: DatabaseState; on
   </>;
 }
 
-function EditorModal({ initial, category, onClose, onSave }: { initial?: Entry; category: Category; onClose: () => void; onSave: (category: Category, entry: Entry, originalName?: string) => void }) {
+function EditorModal({ initial, category, onClose, onSave }: { initial?: Entry | undefined; category: Category; onClose: () => void; onSave: (category: Category, entry: Entry, originalName?: string) => void }) {
   const [form, setForm] = useState<Entry>(initial ? clone(initial) : { name: '', cls: '', tag: 'LOCAL FILE', summary: '', speed: 'N/A', strength: 'N/A', durability: 'N/A', hypothetical: '', tier: 'Undefined', notes: [], images: [] });
   const isEditing = Boolean(initial);
   const setField = (key: keyof Entry, value: any) => setForm((previous) => ({ ...previous, [key]: value }));
@@ -502,7 +502,7 @@ function ReferenceText({ text, data }: { text: string; data: DatabaseState }) {
   const [selected, setSelected] = useState<string | null>(null);
   const parts = text.split(/(\*[^*]+\*)/g);
   const findTerm = (raw: string) => data.appendix.find(t => t.name.toLowerCase() === raw.toLowerCase());
-  return <>{parts.map((part, i) => { const match = part.match(/^\*([^*]+)\*$/); if (!match) return <span key={i}>{part}</span>; const word = match[1]; const dossier = allEntries(data).find(({item}) => item.name.toLowerCase() === word.toLowerCase()); const glossary = findTerm(word); return <button key={i} type="button" className="reference-token" onClick={() => dossier ? setLocation(`/entry/${dossier.category}/${encodeURIComponent(dossier.item.name)}`) : setSelected(word)}>{word}</button>; })}{selected && <div className="reference-popover" onMouseDown={() => setSelected(null)}><div className="reference-card" onMouseDown={e=>e.stopPropagation()}><button className="reference-close" onClick={()=>setSelected(null)}><X size={14}/></button>{(() => { const glossary = findTerm(selected); return glossary ? <><div className="eyebrow">Index reference</div><h3>{glossary.name}</h3><p>{glossary.summary}</p></> : <><div className="eyebrow">Index reference</div><h3>{selected}</h3><p>No matching entry exists yet. Add it to the Appendix to define it.</p></>; })()}</div></div>}</>;
+  return <>{parts.map((part, i) => { const match = part.match(/^\*([^*]+)\*$/); if (!match) return <span key={i}>{part}</span>; const word = match[1] ?? ''; const dossier = allEntries(data).find(({item}) => item.name.toLowerCase() === word.toLowerCase()); const glossary = findTerm(word); return <button key={i} type="button" className="reference-token" onClick={() => dossier ? setLocation(`/entry/${dossier.category}/${encodeURIComponent(dossier.item.name)}`) : setSelected(word)}>{word}</button>; })}{selected && <div className="reference-popover" onMouseDown={() => setSelected(null)}><div className="reference-card" onMouseDown={e=>e.stopPropagation()}><button className="reference-close" onClick={()=>setSelected(null)}><X size={14}/></button>{(() => { const glossary = findTerm(selected); return glossary ? <><div className="eyebrow">Index reference</div><h3>{glossary.name}</h3><p>{glossary.summary}</p></> : <><div className="eyebrow">Index reference</div><h3>{selected}</h3><p>No matching entry exists yet. Add it to the Appendix to define it.</p></>; })()}</div></div>}</>;
 }
 
 function EmailAuthModal({ onClose }: { onClose: () => void }) {
