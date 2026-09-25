@@ -27,9 +27,10 @@ type Entry = {
   image?: string;
   images?: ArchiveImage[];
   notes?: ArchiveNote[];
+  createdAt?: string;
 };
 type LegalTerms = { content: string; updated_at?: string };
-type DatabaseState = Record<Category, Entry[]> & { settings?: { name: string; data: LegalTerms }[] };
+type DatabaseState = Record<Category, Entry[]> & { settings?: { name: string; data: any }[] };
 
 const categoryMeta: Record<Category, { label: string; color: string; icon: typeof Archive }> = {
   characters: { label: 'Characters', color: '#e21f2f', icon: Shield },
@@ -122,12 +123,23 @@ function AppContent() {
   const [artworks, setArtworks] = useState<Artwork[]>([]);
   const [terms, setTerms] = useState<LegalTerms>(() => { try { return JSON.parse(localStorage.getItem('gsnArenaTerms') || 'null') || defaultTerms; } catch { return defaultTerms; } });
   const [artRefresh, setArtRefresh] = useState(0);
+  const [imageTags, setImageTags] = useState<string[]>([]);
+  const addImageTag = async (tag: string) => {
+    const clean = tag.trim();
+    if (!clean || imageTags.some((t) => t.toLowerCase() === clean.toLowerCase())) return;
+    const next = [...imageTags, clean].sort((a, b) => a.localeCompare(b));
+    setImageTags(next);
+    try { await saveArchiveEntry('settings', 'image_tags', { name: 'image_tags', tags: next }); setToast(`Tag "${clean}" added`); }
+    catch (error) { setToast(error instanceof Error ? `Tag save failed: ${error.message}` : 'Tag save failed'); }
+  };
   useEffect(() => {
     loadArchive(getStoredData()).then(async ({ data: remote, hasRemote }) => {
       const merged = { ...clone(defaultData), ...(remote as DatabaseState) };
       setData(merged);
       const remoteTerms = (remote as DatabaseState).settings?.find((item) => item.name === 'terms')?.data;
       if (remoteTerms?.content) setTerms(remoteTerms);
+      const remoteTags = (remote as DatabaseState).settings?.find((item) => item.name === 'image_tags')?.data?.tags;
+      if (Array.isArray(remoteTags)) setImageTags(remoteTags);
       if (mode === 'editor' && supabase && !hasRemote) {
         try { await seedArchive(merged as unknown as Record<string, unknown[]>); } catch {}
       }
@@ -171,6 +183,7 @@ function AppContent() {
 
   const navigate = (path: string) => setLocation(path);
   const saveEntry = async (category: Category, entry: Entry, originalName?: string) => {
+    if (!originalName && category !== 'appendix' && !entry.createdAt) entry = { ...entry, createdAt: new Date().toISOString() };
     setData((previous) => {
       const list = [...previous[category]];
       const index = originalName ? list.findIndex((item) => item.name === originalName) : -1;
@@ -272,7 +285,7 @@ function AppContent() {
           <button className="search-trigger" type="button" data-testid="button-search-archive" onClick={() => setSearchOpen(true)}><Search size={15} /><span>Search the archive</span><kbd>⌘ K</kbd></button>
         </header>
         <main className="content">
-          {page === 'home' && <HomePage data={data} navigate={navigate} />}
+          {page === 'home' && <HomePage data={data} navigate={navigate} openEntry={openEntry} />}
           {activeCategory && <CategoryPage category={activeCategory} data={data} openEntry={openEntry} />}
           {page === 'tier-list' && <TierListPage data={data} openEntry={openEntry} />}
           {page === 'compare' && <ComparePage data={data} openEntry={openEntry} />}
@@ -286,7 +299,7 @@ function AppContent() {
       </div>
       {sidebarOpen && <button className="modal-backdrop" type="button" aria-label="Close navigation" data-testid="button-close-navigation" onClick={() => setSidebarOpen(false)} style={{ zIndex: 15, background: 'rgba(0,0,0,.5)' }} />}
       {searchOpen && <SearchModal data={data} term={searchTerm} setTerm={setSearchTerm} onClose={() => { setSearchOpen(false); setSearchTerm(''); }} onOpen={(category, name) => { setSearchOpen(false); setSearchTerm(''); openEntry(category, name); }} />}
-      {editing && <EditorModal initial={editing.entry} category={editing.category} onClose={() => setEditing(null)} onSave={saveEntry} />}
+      {editing && <EditorModal initial={editing.entry} category={editing.category} onClose={() => setEditing(null)} onSave={saveEntry} tags={imageTags} onAddTag={addImageTag} />}
       {toast && <div className="toast" role="status" data-testid="status-toast">{toast}</div>}
       {showAuth && <EmailAuthModal onClose={() => setShowAuth(false)} />}
     </div>
@@ -297,11 +310,31 @@ function NavButton({ active, icon, children, onClick }: { active: boolean; icon:
   return <button className={`nav-item ${active ? 'active' : ''}`} type="button" onClick={onClick} data-testid={`nav-${String(children).toLowerCase().replaceAll(' ', '-')}`}>{icon}{children}</button>;
 }
 
-function HomePage({ data, navigate }: { data: DatabaseState; navigate: (path: string) => void }) {
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+function NewEntries({ data, openEntry }: { data: DatabaseState; openEntry: (category: Category, name: string) => void }) {
+  const fresh = allEntries(data).filter(({ item, category }) => category !== 'appendix' && item.createdAt && Date.now() - new Date(item.createdAt).getTime() < WEEK_MS)
+    .sort((a, b) => (b.item.createdAt || '').localeCompare(a.item.createdAt || ''));
+  if (!fresh.length) return null;
+  const n = fresh.length;
+  const radius = n === 1 ? 0 : Math.max(150, Math.round(90 / Math.tan(Math.PI / n)));
+  return <section className="new-entries">
+    <div className="section-head"><div><div className="eyebrow">Filed this week</div><h2>New Entries</h2></div><p>{String(n).padStart(2, '0')} new</p></div>
+    <div className="orbit-stage"><div className={`orbit-ring ${n > 1 ? 'spin' : ''}`} style={{ animationDuration: `${Math.max(12, n * 5)}s` } as React.CSSProperties}>
+      {fresh.map(({ item, category }, i) => <button key={`${category}-${item.name}`} type="button" className="new-card" onClick={() => openEntry(category, item.name)}
+        style={{ '--card-color': categoryMeta[category].color, transform: `rotateY(${(360 / n) * i}deg) translateZ(${radius}px)` } as React.CSSProperties}>
+        <div className="new-card-ring">{item.image ? <img src={item.image} alt={item.name} /> : <span>{item.name.charAt(0)}</span>}</div>
+        <div className="new-card-name">{item.name}</div>
+      </button>)}
+    </div></div>
+  </section>;
+}
+
+function HomePage({ data, navigate, openEntry }: { data: DatabaseState; navigate: (path: string) => void; openEntry: (category: Category, name: string) => void }) {
   const total = allEntries(data).length;
   const scored = allEntries(data).filter(({ item }) => item.tier && item.tier !== 'Undefined').length;
   return (
     <>
+      <NewEntries data={data} openEntry={openEntry} />
       <section className="hero-panel">
         <div className="hero-copy">
           <div className="hero-kicker">Field intelligence / open access</div>
@@ -472,7 +505,24 @@ function EditorPage({ data, onEdit, onDelete, onAdd }: { data: DatabaseState; on
   </>;
 }
 
-function EditorModal({ initial, category, onClose, onSave }: { initial?: Entry | undefined; category: Category; onClose: () => void; onSave: (category: Category, entry: Entry, originalName?: string) => void }) {
+function ImagePickButton({ onUrl }: { onUrl: (url: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  return <label className="btn ghost pick-btn">{busy ? 'Uploading…' : <><Upload size={13}/> Choose image</>}
+    <input type="file" accept="image/*" hidden disabled={busy} onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; setBusy(true); setErr(''); try { onUrl(await uploadArchiveImage(f)); } catch (x) { setErr(x instanceof Error ? x.message : 'Upload failed'); } finally { setBusy(false); } }} />
+    {err && <span className="form-error">{err}</span>}</label>;
+}
+
+function TagPicker({ selected, tags, onChange, onAddTag }: { selected: string[]; tags: string[]; onChange: (tags: string[]) => void; onAddTag: (tag: string) => void }) {
+  const [draft, setDraft] = useState('');
+  const toggle = (t: string) => onChange(selected.includes(t) ? selected.filter((x) => x !== t) : [...selected, t]);
+  return <div className="tag-picker">
+    {tags.length ? tags.map((t) => <button type="button" key={t} className={`tag-chip ${selected.includes(t) ? 'on' : ''}`} onClick={() => toggle(t)}>#{t}</button>) : <span className="tag-empty">No tags yet — create one.</span>}
+    <span className="tag-new"><input className="text-input" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="New tag" /><button type="button" className="btn ghost mini" onClick={() => { if (draft.trim()) { onAddTag(draft); onChange([...selected, draft.trim()]); setDraft(''); } }}><Plus size={12}/> Tag</button></span>
+  </div>;
+}
+
+function EditorModal({ initial, category, onClose, onSave, tags, onAddTag }: { initial?: Entry | undefined; category: Category; onClose: () => void; onSave: (category: Category, entry: Entry, originalName?: string) => void; tags: string[]; onAddTag: (tag: string) => void }) {
   const [form, setForm] = useState<Entry>(initial ? clone(initial) : { name: '', cls: '', tag: 'LOCAL FILE', summary: '', speed: 'N/A', strength: 'N/A', durability: 'N/A', hypothetical: '', tier: 'Undefined', notes: [], images: [] });
   const isEditing = Boolean(initial);
   const setField = (key: keyof Entry, value: any) => setForm((previous) => ({ ...previous, [key]: value }));
@@ -491,8 +541,8 @@ function EditorModal({ initial, category, onClose, onSave }: { initial?: Entry |
     <div className="field"><label>Power / strength</label><input className="text-input" value={form.strength} onChange={e => setField('strength', e.target.value)} /></div>
     <div className="field"><label>Durability</label><input className="text-input" value={form.durability} onChange={e => setField('durability', e.target.value)} /></div>
     <div className="field full"><label>Working hypothesis</label><textarea className="text-area" value={form.hypothetical || ''} onChange={e => setField('hypothetical', e.target.value)} /></div>
-    <div className="field full"><label>Primary profile image URL</label><input className="text-input" value={form.image || ''} onChange={e => setField('image', e.target.value)} placeholder="https://..." /></div>
-    <div className="field full"><div className="editor-section-head"><label>Additional images</label><button type="button" className="btn ghost" onClick={addImage}><Plus size={13}/> Add image</button></div>{(form.images || []).map((image, index) => <div className="editor-subrow" key={index}><input className="text-input" value={image.url} onChange={e => updateImage(index,{url:e.target.value})} placeholder="Image URL" /><input className="text-input" value={image.alt || ''} onChange={e => updateImage(index,{alt:e.target.value})} placeholder="Alt text" /><input className="text-input" value={(image.tags || []).join(', ')} onChange={e => updateImage(index,{tags:e.target.value.split(',').map(x=>x.trim()).filter(Boolean)})} placeholder="Nikke name tags only, comma separated" /></div>)}</div>
+    <div className="field full"><label>Primary profile image</label><div className="image-pick-row">{form.image ? <img className="image-thumb" src={form.image} alt="" /> : null}<ImagePickButton onUrl={(url) => setField('image', url)} />{form.image ? <button type="button" className="btn ghost mini" onClick={() => setField('image', '')}><X size={12}/> Remove</button> : null}</div></div>
+    <div className="field full"><div className="editor-section-head"><label>Additional images</label><button type="button" className="btn ghost" onClick={addImage}><Plus size={13}/> Add image</button></div>{(form.images || []).map((image, index) => <div className="editor-subrow" key={index}><div className="image-pick-row">{image.url ? <img className="image-thumb" src={image.url} alt="" /> : null}<ImagePickButton onUrl={(url) => updateImage(index,{url})} /><button type="button" className="btn ghost mini" onClick={() => setField('images', (form.images || []).filter((_, i) => i !== index))}><Trash2 size={12}/> Remove</button></div><input className="text-input" value={image.alt || ''} onChange={e => updateImage(index,{alt:e.target.value})} placeholder="Alt text" /><TagPicker selected={image.tags || []} tags={tags} onChange={(t) => updateImage(index,{tags:t})} onAddTag={onAddTag} /></div>)}</div>
     <div className="field full"><div className="editor-section-head"><label>Notes</label><button type="button" className="btn ghost" onClick={addNote}><Plus size={13}/> Add note</button></div><div className="note-guide">Seth marker: ♤ · Community markers: ○ ● □ ♡ ◇ ♧ ☆ ¤</div>{(form.notes || []).map((note, index) => <div className="editor-subrow note-row" key={index}><select className="select-input note-marker-select" value={note.marker} onChange={e => updateNote(index,{marker:e.target.value as NoteMarker})}>{noteMarkers.map(m=><option key={m}>{m}</option>)}</select><input className="text-input" value={note.author} onChange={e => updateNote(index,{author:e.target.value})} placeholder="Author" /><textarea className="text-area" value={note.text} onChange={e => updateNote(index,{text:e.target.value})} placeholder="Note text. Use *Term* for references." /></div>)}</div>
   </div></div><div className="modal-foot"><button className="btn ghost" type="button" onClick={onClose}>Cancel</button><button className="btn primary" type="submit"><Database size={14}/> Save to archive</button></div></form></div>;
 }
@@ -620,8 +670,8 @@ function CommunityModerationPage({ onChanged }: { onChanged: () => void }) {
 }
 
 function SearchModal({ data, term, setTerm, onClose, onOpen }: { data: DatabaseState; term: string; setTerm: (value: string) => void; onClose: () => void; onOpen: (category: Category, name: string) => void }) {
-  const results = useMemo(() => allEntries(data).filter(({ item }) => `${item.name} ${item.cls} ${item.summary}`.toLowerCase().includes(term.toLowerCase())).slice(0, 20), [data, term]);
-  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><div className="modal search-modal"><div className="modal-head"><h2>Search archive</h2><button className="btn ghost" type="button" aria-label="Close search" data-testid="button-close-search" onClick={onClose}><X size={17} /></button></div><div className="modal-body"><div className="input-wrap"><ScanSearch size={16} /><input className="text-input" autoFocus value={term} onChange={(event) => setTerm(event.target.value)} placeholder="Search names, classifications, feats..." aria-label="Search archive" data-testid="input-search-archive" /></div><div className="search-results">{results.length ? results.map(({ item, category }) => <button className="search-result" type="button" key={`${category}-${item.name}`} onClick={() => onOpen(category, item.name)} data-testid={`search-result-${item.name.replaceAll(' ', '-').toLowerCase()}`}><div><strong>{item.name}</strong><div><span>{categoryMeta[category].label} / {item.cls}</span></div></div><ArrowRight size={15} /></button>) : <EmptyState text="No files match that query." />}</div></div></div></div>;
+  const results = useMemo(() => allEntries(data).filter(({ item }) => `${item.name} ${item.cls} ${item.summary} ${(item.images || []).flatMap((im) => (im.tags || []).map((t) => '#' + t + ' ' + t)).join(' ')}`.toLowerCase().includes(term.toLowerCase())).slice(0, 20), [data, term]);
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><div className="modal search-modal"><div className="modal-head"><h2>Search archive</h2><button className="btn ghost" type="button" aria-label="Close search" data-testid="button-close-search" onClick={onClose}><X size={17} /></button></div><div className="modal-body"><div className="input-wrap"><ScanSearch size={16} /><input className="text-input" autoFocus value={term} onChange={(event) => setTerm(event.target.value)} placeholder="Search names, feats, or #image-tags..." aria-label="Search archive" data-testid="input-search-archive" /></div><div className="search-results">{results.length ? results.map(({ item, category }) => <button className="search-result" type="button" key={`${category}-${item.name}`} onClick={() => onOpen(category, item.name)} data-testid={`search-result-${item.name.replaceAll(' ', '-').toLowerCase()}`}><div><strong>{item.name}</strong><div><span>{categoryMeta[category].label} / {item.cls}</span></div></div><ArrowRight size={15} /></button>) : <EmptyState text="No files match that query." />}</div></div></div></div>;
 }
 
 function NotFound({ navigate }: { navigate: (path: string) => void }) {
