@@ -151,9 +151,10 @@ function AppContent() {
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => applySession(session?.user));
     return () => listener.subscription.unsubscribe();
   }, []);
+  const [showAuth, setShowAuth] = useState(false);
   const signInAsAdmin = () => {
     if (!supabase) { setToast('Connect Supabase first — see COMMUNITY-SETUP.md.'); return; }
-    supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.href } });
+    setShowAuth(true);
   };
   const signOut = async () => { if (supabase) await supabase.auth.signOut(); setMode('public'); setCurrentUser(null); };
 
@@ -287,6 +288,7 @@ function AppContent() {
       {searchOpen && <SearchModal data={data} term={searchTerm} setTerm={setSearchTerm} onClose={() => { setSearchOpen(false); setSearchTerm(''); }} onOpen={(category, name) => { setSearchOpen(false); setSearchTerm(''); openEntry(category, name); }} />}
       {editing && <EditorModal initial={editing.entry} category={editing.category} onClose={() => setEditing(null)} onSave={saveEntry} />}
       {toast && <div className="toast" role="status" data-testid="status-toast">{toast}</div>}
+      {showAuth && <EmailAuthModal onClose={() => setShowAuth(false)} />}
     </div>
   );
 }
@@ -517,10 +519,8 @@ function CommunityArtPage({ artworks, onSubmitted }: { artworks: Artwork[]; onSu
   const [showSubmit, setShowSubmit] = useState(false);
   const [showNsfwNotice, setShowNsfwNotice] = useState(false);
   const visible = artworks.filter((art) => art.rating === tab);
-  const signIn = async () => {
-    if (!supabase) return;
-    await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin + '/community' } });
-  };
+  const [showAuth, setShowAuth] = useState(false);
+  const signIn = () => { if (supabase) setShowAuth(true); };
   return <>
     <div className="eyebrow" style={{ color: '#d93f7a' }}>Community archive / artist submissions</div>
     <h1 className="display-title">Community <em>Art</em></h1>
@@ -531,7 +531,7 @@ function CommunityArtPage({ artworks, onSubmitted }: { artworks: Artwork[]; onSu
         <button className={`btn ${tab === 'nsfw' ? 'primary' : 'ghost'}`} onClick={() => { setTab('nsfw'); setShowNsfwNotice(true); }}>Mature / NSFW</button>
       </div>
       <div className="community-actions">
-        {supabase && <button className="btn ghost" onClick={signIn}><LogIn size={14} /> Sign in with Google</button>}
+        {supabase && <button className="btn ghost" onClick={signIn}><LogIn size={14} /> Sign in</button>}
         <button className="btn primary" onClick={() => setShowSubmit(true)}><Upload size={14} /> Submit artwork</button>
       </div>
     </div>
@@ -540,6 +540,7 @@ function CommunityArtPage({ artworks, onSubmitted }: { artworks: Artwork[]; onSu
       {visible.length ? visible.map((art) => <article className="art-card" key={art.id}><img src={art.image_url} alt={art.title} loading="lazy" /><div className="art-card-body"><div className="art-card-title">{art.title}</div><div className="art-card-meta">by {art.artist_name}</div>{art.description && <p>{art.description}</p>}</div></article>) : <EmptyState text="No approved artwork in this section yet." />}
     </div>
     {showSubmit && <ArtworkSubmitModal onClose={() => setShowSubmit(false)} onSubmitted={() => { setShowSubmit(false); onSubmitted(); }} />}
+    {showAuth && <EmailAuthModal onClose={() => setShowAuth(false)} />}
     {showNsfwNotice && <div className="modal-backdrop"><div className="warning-modal"><AlertTriangle size={28} /><h2>Mature content ahead</h2><p>This section is reserved for adult/NSFW artwork. Nothing here is presented as part of the core lore archive. If you do not want to view mature material, choose General instead.</p><button className="btn primary" onClick={() => setShowNsfwNotice(false)}>I understand</button></div></div>}
   </>;
 }
