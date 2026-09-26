@@ -13,6 +13,7 @@ export type Artwork = {
   status: ArtworkStatus;
   created_at: string;
   user_id?: string;
+  tags?: string[];
 };
 
 const url = import.meta.env['VITE_SUPABASE_URL'] as string | undefined;
@@ -43,7 +44,7 @@ export async function getPendingArt(): Promise<Artwork[]> {
   return (data || []) as Artwork[];
 }
 
-export async function submitArt(input: { title: string; artist_name: string; description: string; rating: ArtworkRating; file: File }): Promise<void> {
+export async function submitArt(input: { title: string; artist_name: string; description: string; rating: ArtworkRating; file: File; tags?: string[] }): Promise<void> {
   if (!supabase) {
     const reader = new FileReader();
     const image_url = await new Promise<string>((resolve, reject) => { reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(input.file); });
@@ -59,7 +60,7 @@ export async function submitArt(input: { title: string; artist_name: string; des
   const { error: uploadError } = await supabase.storage.from('community-art').upload(path, input.file, { upsert: false });
   if (uploadError) throw uploadError;
   const { data: publicData } = supabase.storage.from('community-art').getPublicUrl(path);
-  const { error } = await supabase.from('artworks').insert({ title: input.title, artist_name: input.artist_name, description: input.description, rating: input.rating, image_url: publicData.publicUrl, status: 'pending', user_id: user.id });
+  const { error } = await supabase.from('artworks').insert({ title: input.title, artist_name: input.artist_name, description: input.description, rating: input.rating, image_url: publicData.publicUrl, status: 'pending', user_id: user.id, tags: input.tags || [] });
   if (error) throw error;
 }
 
@@ -81,4 +82,24 @@ export async function setArtStatus(id: string, status: ArtworkStatus): Promise<v
   }
   const { error } = await supabase.from('artworks').update({ status }).eq('id', id);
   if (error) throw error;
+}
+
+export async function uploadArchiveImage(file: File): Promise<string> {
+  if (!supabase) throw new Error('Storage is not connected.');
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Please sign in first.');
+  const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+  const path = `${user.id}/archive-${crypto.randomUUID()}.${ext}`;
+  const { error } = await supabase.storage.from('community-art').upload(path, file, { upsert: false });
+  if (error) throw error;
+  return supabase.storage.from('community-art').getPublicUrl(path).data.publicUrl;
+}
+
+export async function deleteMyArt(art: Artwork): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase.from('artworks').delete().eq('id', art.id);
+  if (error) throw error;
+  const marker = '/community-art/';
+  const i = art.image_url.indexOf(marker);
+  if (i >= 0) await supabase.storage.from('community-art').remove([art.image_url.slice(i + marker.length)]);
 }
