@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
+import { RichEntryEditor } from './RichEntryEditor';
+import { cleanEntryHtml, plainEntryText } from './lib/entry-content';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import { getArt, getPendingArt, isGsnAdmin, setArtStatus, submitArt, supabase, uploadArchiveImage, deleteMyArt, type Artwork, type ArtworkRating } from './lib/community';
+import { getArt, getPendingArt, isGsnAdmin, setArtStatus, submitArtBatch, supabase, uploadArchiveImage, deleteMyArt, type Artwork, type ArtworkRating } from './lib/community';
 import { deleteArchiveEntry, loadArchive, saveArchiveEntry, seedArchive } from './lib/archive';
 import {
   Archive, ArrowLeft, ArrowRight, BookOpen, ChevronRight, CircleDot, Database,
@@ -383,7 +385,7 @@ function Stat({ value, label }: { value: string | number; label: string }) {
 
 function CategoryPage({ category, data, openEntry }: { category: Category; data: DatabaseState; openEntry: (category: Category, name: string) => void }) {
   const [filter, setFilter] = useState('');
-  const entries = useMemo(() => data[category].filter((entry) => `${entry.name} ${entry.cls} ${entry.summary}`.toLowerCase().includes(filter.toLowerCase())), [category, data, filter]);
+  const entries = useMemo(() => data[category].filter((entry) => `${entry.name} ${entry.cls} ${plainEntryText(entry.summary)}`.toLowerCase().includes(filter.toLowerCase())), [category, data, filter]);
   const meta = categoryMeta[category];
   return (
     <>
@@ -398,7 +400,7 @@ function CategoryPage({ category, data, openEntry }: { category: Category; data:
 
 function EntryCard({ category, entry, color, openEntry }: { category: Category; entry: Entry; color: string; openEntry: (category: Category, name: string) => void }) {
   return <button className="entry-card" type="button" style={{ '--entry-color': color } as React.CSSProperties} onClick={() => openEntry(category, entry.name)} data-testid={`card-entry-${entry.name.replaceAll(' ', '-').toLowerCase()}`}>
-    <div><div className="entry-card-header"><span className="entry-tag">{entry.tag}</span><span className="entry-code">{entry.tier || 'UNRATED'}</span></div><div className="entry-name-row">{entry.image ? <div className="entry-avatar"><img src={entry.image} alt="" /></div> : null}<div className="entry-name">{entry.name}</div></div><div className="entry-class">{entry.cls}</div><p className="entry-summary">{entry.summary}</p></div>
+    <div><div className="entry-card-header"><span className="entry-tag">{entry.tag}</span><span className="entry-code">{entry.tier || 'UNRATED'}</span></div><div className="entry-name-row">{entry.image ? <div className="entry-avatar"><img src={entry.image} alt="" /></div> : null}<div className="entry-name">{entry.name}</div></div><div className="entry-class">{entry.cls}</div><p className="entry-summary">{plainEntryText(entry.summary)}</p></div>
     <div className="entry-foot"><span>{category === 'appendix' ? 'REFERENCE TERM' : entry.speed !== 'N/A' ? 'FEAT DATA AVAILABLE' : 'PARTIAL RECORD'}</span><span className="entry-arrow"><ArrowRight size={15} /></span></div>
   </button>;
 }
@@ -489,11 +491,12 @@ function DossierPage({ category, name, data, onBack, onEdit }: { category: Categ
   return <article className="dossier">
     <button className="back-link" type="button" onClick={onBack} data-testid="button-back-dossier"><ArrowLeft size={14} /> Return to {meta.label}</button>
     <div className="dossier-top"><div><div className="dossier-tag" style={{ color: meta.color }}>{entry.tag} / {meta.label}</div><h1 className="dossier-title">{entry.name}</h1><div className="dossier-class">{entry.cls}</div></div><div className="dossier-actions">{onEdit && <button className="btn" type="button" onClick={() => onEdit(entry)} data-testid="button-edit-dossier"><Pencil size={14} /> Edit file</button>}</div></div>
-    <p className="dossier-summary"><ReferenceText text={entry.summary} data={data} /></p>
-    {entry.image || entry.images?.length ? <div className="dossier-images">{[...(entry.image ? [{url:entry.image, alt:entry.name, tags:[]} as ArchiveImage] : []), ...(entry.images || [])].map((image, index) => <figure key={`${image.url}-${index}`}><img src={image.url} alt={image.alt || entry.name} loading="lazy" /><figcaption>{image.tags?.length ? image.tags.map((tag) => `#${tag}`).join(' ') : 'ARCHIVE IMAGE'}</figcaption></figure>)}</div> : null}
+    {entry.image && <figure className="dossier-profile"><img src={entry.image} alt={entry.name} /></figure>}
+    <div className="dossier-summary"><EntryBody text={entry.summary} data={data} /></div>
+    {entry.images?.length ? <div className="dossier-images">{(entry.images || []).map((image, index) => <figure key={`${image.url}-${index}`}><img src={image.url} alt={image.alt || entry.name} loading="lazy" /><figcaption>{image.tags?.length ? image.tags.map((tag) => `#${tag}`).join(' ') : 'ARCHIVE IMAGE'}</figcaption></figure>)}</div> : null}
     <div className="specs">{[['Speed', entry.speed], ['Power / Strength', entry.strength], ['Durability', entry.durability]].map(([label, value]) => <div className="spec" key={label}><div className="spec-label">{label}</div><div className="spec-value">{value}</div></div>)}</div>
     {entry.extra?.length ? <><div className="block-title">Additional measurements</div><div className="extra-grid">{entry.extra.map((item) => <div className="spec" key={item.label}><div className="spec-label">{item.label}</div><div className="spec-value">{item.value}</div></div>)}</div></> : null}
-    {entry.hypothetical ? <><div className="block-title">Working hypothesis</div><div className="hypothesis"><ReferenceText text={entry.hypothetical} data={data} /></div></> : null}
+    {entry.hypothetical ? <><div className="block-title">Working hypothesis</div><div className="hypothesis"><EntryBody text={entry.hypothetical} data={data} /></div></> : null}
     {entry.notes?.length ? <><div className="block-title">Notes</div><div className="archive-notes">{entry.notes.map((note, index) => <div className="archive-note" key={index}><span className="note-marker">{note.marker}</span><div><strong>{note.author || 'Community note'}</strong><p><ReferenceText text={note.text} data={data} /></p></div></div>)}</div></> : null}
     <div className="block-title">Record note</div><p style={{ color: 'var(--muted)', font: '12px/1.7 var(--font-mono)' }}>This dossier is a community-maintained interpretation. Approved records can be revised from the database editor.</p>
   </article>;
@@ -535,26 +538,31 @@ function TagPicker({ selected, tags, onChange, onAddTag }: { selected: string[];
 function EditorModal({ initial, category, onClose, onSave, tags, onAddTag }: { initial?: Entry | undefined; category: Category; onClose: () => void; onSave: (category: Category, entry: Entry, originalName?: string) => void; tags: string[]; onAddTag: (tag: string) => void }) {
   const [form, setForm] = useState<Entry>(initial ? clone(initial) : { name: '', cls: '', tag: 'LOCAL FILE', summary: '', speed: 'N/A', strength: 'N/A', durability: 'N/A', hypothetical: '', tier: 'Undefined', notes: [], images: [] });
   const isEditing = Boolean(initial);
+  const [documentField, setDocumentField] = useState<'summary' | 'hypothetical' | null>(null);
+  const [saveError, setSaveError] = useState('');
   const setField = (key: keyof Entry, value: any) => setForm((previous) => ({ ...previous, [key]: value }));
   const addNote = () => setField('notes', [...(form.notes || []), { marker: '○', author: 'Community', text: '' }]);
   const updateNote = (index: number, patch: Partial<ArchiveNote>) => setField('notes', (form.notes || []).map((n, i) => i === index ? { ...n, ...patch } : n));
-  const addImage = () => setField('images', [...(form.images || []), { url: '', alt: form.name, tags: [] }]);
-  const updateImage = (index: number, patch: Partial<ArchiveImage>) => setField('images', (form.images || []).map((im, i) => i === index ? { ...im, ...patch } : im));
-  const submit = (event: React.FormEvent) => { event.preventDefault(); if (!form.name.trim() || !form.cls.trim() || !form.summary.trim()) return; onSave(category, { ...form, name: form.name.trim(), cls: form.cls.trim(), summary: form.summary.trim(), images: (form.images || []).filter((im) => im.url.trim()) }, initial?.name); };
+  const submit = (event: React.FormEvent) => { event.preventDefault(); if (!form.name.trim() || !form.cls.trim() || !plainEntryText(form.summary)) { setSaveError('Name, classification and actual summary are required.'); return; } onSave(category, { ...form, name: form.name.trim(), cls: form.cls.trim(), summary: form.summary.trim() }, initial?.name); };
+  if (documentField) return <div className="modal-backdrop"><div className="modal document-modal"><RichEntryEditor key={documentField} title={`${form.name || 'New dossier'} / ${documentField === 'summary' ? 'Actual summary' : 'Hypothetical summary'}`} value={form[documentField] || ''} onBack={() => setDocumentField(null)} onSave={(html) => { setField(documentField, html); setDocumentField(null); }} /></div></div>;
   return <div className="modal-backdrop"><form className="modal" onSubmit={submit}><div className="modal-head"><h2>{isEditing ? 'Edit dossier' : 'New dossier'}</h2><button className="btn ghost" type="button" aria-label="Close editor" onClick={onClose}><X size={17} /></button></div><div className="modal-body"><div className="form-grid">
     <div className="field"><label>Name</label><input className="text-input" value={form.name} onChange={e => setField('name', e.target.value)} required /></div>
     <div className="field"><label>Classification</label><input className="text-input" value={form.cls} onChange={e => setField('cls', e.target.value)} required /></div>
     <div className="field"><label>File marker</label><input className="text-input" value={form.tag} onChange={e => setField('tag', e.target.value)} /></div>
     <div className="field"><label>Tier placement</label><select className="select-input" value={form.tier || 'Undefined'} onChange={e => setField('tier', e.target.value)}>{tiers.map(t => <option key={t}>{t}</option>)}</select></div>
-    <div className="field full"><label>Summary / feats. Use *Term* to activate the reference system.</label><textarea className="text-area" value={form.summary} onChange={e => setField('summary', e.target.value)} required /></div>
+    <div className="field full"><label>Actual summary / feats</label><button className="document-launch" type="button" onClick={() => setDocumentField('summary')}><FileText size={18} /><span>{plainEntryText(form.summary).slice(0, 110) || 'Write actual summary'}</span><Pencil size={15}/></button></div>
     <div className="field"><label>Speed</label><input className="text-input" value={form.speed} onChange={e => setField('speed', e.target.value)} /></div>
     <div className="field"><label>Power / strength</label><input className="text-input" value={form.strength} onChange={e => setField('strength', e.target.value)} /></div>
     <div className="field"><label>Durability</label><input className="text-input" value={form.durability} onChange={e => setField('durability', e.target.value)} /></div>
-    <div className="field full"><label>Working hypothesis</label><textarea className="text-area" value={form.hypothetical || ''} onChange={e => setField('hypothetical', e.target.value)} /></div>
+    <div className="field full"><label>Hypothetical summary</label><button className="document-launch" type="button" onClick={() => setDocumentField('hypothetical')}><FileText size={18} /><span>{plainEntryText(form.hypothetical || '').slice(0, 110) || 'Write hypothetical summary'}</span><Pencil size={15}/></button></div>
     <div className="field full"><label>Primary profile image</label><div className="image-pick-row">{form.image ? <img className="image-thumb" src={form.image} alt="" /> : null}<ImagePickButton onUrl={(url) => setField('image', url)} />{form.image ? <button type="button" className="btn ghost mini" onClick={() => setField('image', '')}><X size={12}/> Remove</button> : null}</div></div>
-    <div className="field full"><div className="editor-section-head"><label>Additional images</label><button type="button" className="btn ghost" onClick={addImage}><Plus size={13}/> Add image</button></div>{(form.images || []).map((image, index) => <div className="editor-subrow" key={index}><div className="image-pick-row">{image.url ? <img className="image-thumb" src={image.url} alt="" /> : null}<ImagePickButton onUrl={(url) => updateImage(index,{url})} /><button type="button" className="btn ghost mini" onClick={() => setField('images', (form.images || []).filter((_, i) => i !== index))}><Trash2 size={12}/> Remove</button></div><input className="text-input" value={image.alt || ''} onChange={e => updateImage(index,{alt:e.target.value})} placeholder="Alt text" /><TagPicker selected={image.tags || []} tags={tags} onChange={(t) => updateImage(index,{tags:t})} onAddTag={onAddTag} /></div>)}</div>
     <div className="field full"><div className="editor-section-head"><label>Notes</label><button type="button" className="btn ghost" onClick={addNote}><Plus size={13}/> Add note</button></div><div className="note-guide">Seth marker: ♤ · Community markers: ○ ● □ ♡ ◇ ♧ ☆ ¤</div>{(form.notes || []).map((note, index) => <div className="editor-subrow note-row" key={index}><select className="select-input note-marker-select" value={note.marker} onChange={e => updateNote(index,{marker:e.target.value as NoteMarker})}>{noteMarkers.map(m=><option key={m}>{m}</option>)}</select><input className="text-input" value={note.author} onChange={e => updateNote(index,{author:e.target.value})} placeholder="Author" /><textarea className="text-area" value={note.text} onChange={e => updateNote(index,{text:e.target.value})} placeholder="Note text. Use *Term* for references." /></div>)}</div>
-  </div></div><div className="modal-foot"><button className="btn ghost" type="button" onClick={onClose}>Cancel</button><button className="btn primary" type="submit"><Database size={14}/> Save to archive</button></div></form></div>;
+  </div>{saveError && <div className="form-error" role="alert">{saveError}</div>}</div><div className="modal-foot"><button className="btn ghost" type="button" onClick={onClose}>Cancel</button><button className="btn primary" type="submit"><Database size={14}/> Save to archive</button></div></form></div>;
+}
+
+function EntryBody({ text, data }: { text: string; data: DatabaseState }) {
+  if (/^\s*<(p|h[23]|ul|ol|blockquote|img)\b/i.test(text)) return <div className="entry-document" dangerouslySetInnerHTML={{ __html: cleanEntryHtml(text) }} />;
+  return <ReferenceText text={text} data={data} />;
 }
 
 function ReferenceText({ text, data }: { text: string; data: DatabaseState }) {
