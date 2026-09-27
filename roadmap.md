@@ -1,0 +1,3 @@
+- [ ] Match reference-style archive editing with separate rich Summary and Hypothetical pages, flowing inline images, and one leading profile photo.
+- [ ] Add fan-art sorting by artist username and tag search; allow up to 13 images with per-image predefined tags.
+- [ ] Add luminous circular profile treatment and verify editing and upload flows.
