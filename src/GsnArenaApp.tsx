@@ -633,7 +633,10 @@ function CommunityArtPage({ artworks, onSubmitted, tags, userId, onToast }: { ar
   const [tab, setTab] = useState<ArtworkRating>('sfw');
   const [showSubmit, setShowSubmit] = useState(false);
   const [showNsfwNotice, setShowNsfwNotice] = useState(false);
-  const visible = artworks.filter((art) => art.rating === tab && (!tagFilter || (art.tags || []).includes(tagFilter)));
+  const [sortBy, setSortBy] = useState<'newest' | 'artist' | 'tag'>('newest');
+  const [artistFilter, setArtistFilter] = useState('');
+  const artists = Array.from(new Set(artworks.map((a) => a.artist_name))).sort((a, b) => a.localeCompare(b));
+  const visible = artworks.filter((art) => art.rating === tab && (!tagFilter || (art.tags || []).includes(tagFilter)) && (!artistFilter || art.artist_name === artistFilter)).sort((a, b) => sortBy === 'artist' ? a.artist_name.localeCompare(b.artist_name) : sortBy === 'tag' ? ((a.tags || [])[0] || '~').localeCompare((b.tags || [])[0] || '~') : b.created_at.localeCompare(a.created_at));
   const [showAuth, setShowAuth] = useState(false);
   const signIn = () => { if (supabase) setShowAuth(true); };
   return <>
@@ -652,6 +655,7 @@ function CommunityArtPage({ artworks, onSubmitted, tags, userId, onToast }: { ar
     </div>
     {tab === 'nsfw' && <div className="content-warning"><AlertTriangle size={17} /><div><strong>Mature content section</strong><br /><span>This section may contain sexually explicit or otherwise adult artwork submitted by users. By entering this section, you acknowledge the nature of the material and choose to view it.</span></div></div>}
     {tags.length ? <div className="tag-picker" style={{ marginBottom: 18 }}><button type="button" className={`tag-chip ${!tagFilter ? 'on' : ''}`} onClick={() => setTagFilter('')}>All</button>{tags.map((t) => <button type="button" key={t} className={`tag-chip ${tagFilter === t ? 'on' : ''}`} onClick={() => setTagFilter(tagFilter === t ? '' : t)}>#{t}</button>)}</div> : null}
+    <div className="art-sort-row"><label>Sort <select className="select-input" value={sortBy} onChange={(e) => setSortBy(e.target.value as 'newest' | 'artist' | 'tag')}><option value="newest">Newest</option><option value="artist">Artist (A–Z)</option><option value="tag">Tag (A–Z)</option></select></label><label>Artist <select className="select-input" value={artistFilter} onChange={(e) => setArtistFilter(e.target.value)}><option value="">All artists</option>{artists.map((a) => <option key={a} value={a}>{a}</option>)}</select></label></div>
     <div className="art-grid">
       {visible.length ? visible.map((art) => <article className="art-card" key={art.id}><img src={art.image_url} alt={art.title} loading="lazy" /><div className="art-card-body"><div className="art-card-title">{art.title}</div><div className="art-card-meta">by {art.artist_name}</div>{art.description && <p>{art.description}</p>}{art.tags?.length ? <div className="art-card-meta">{art.tags.map((t) => `#${t}`).join(' ')}</div> : null}{userId && art.user_id === userId ? <button type="button" className="btn danger mini" style={{ marginTop: 8 }} onClick={() => takeDown(art)}><Trash2 size={12} /> Take down</button> : null}</div></article>) : <EmptyState text="No approved artwork in this section yet." />}
     </div>
@@ -661,25 +665,32 @@ function CommunityArtPage({ artworks, onSubmitted, tags, userId, onToast }: { ar
   </>;
 }
 
+function HashTagInput({ tags, value, onChange }: { tags: string[]; value: string[]; onChange: (v: string[]) => void }) {
+  const [q, setQ] = useState('');
+  const open = q.startsWith('#');
+  const matches = tags.filter((t) => !value.includes(t) && t.toLowerCase().includes(q.slice(1).toLowerCase())).slice(0, 8);
+  return <div className="hash-input"><div className="tag-picker">{value.map((t) => <button type="button" key={t} className="tag-chip on" onClick={() => onChange(value.filter((x) => x !== t))}>#{t} ×</button>)}</div><input className="text-input" value={q} placeholder="Type # to add tags" onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && open && matches[0]) { e.preventDefault(); onChange([...value, matches[0]]); setQ(''); } }} />{open && <div className="hash-menu">{matches.length ? matches.map((t) => <button type="button" key={t} onClick={() => { onChange([...value, t]); setQ(''); }}>#{t}</button>) : <span className="tag-empty">No matching tag</span>}</div>}</div>;
+}
+
 function ArtworkSubmitModal({ onClose, onSubmitted, tags }: { onClose: () => void; onSubmitted: () => void; tags: string[] }) {
-  const [picked, setPicked] = useState<string[]>([]);
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
   const [description, setDescription] = useState('');
   const [rating, setRating] = useState<ArtworkRating>('sfw');
-  const [file, setFile] = useState<File | null>(null);
+  const [items, setItems] = useState<{ file: File; tags: string[]; url: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const addFiles = (list: FileList | null) => { if (!list) return; const next = [...items, ...Array.from(list).map((file) => ({ file, tags: [] as string[], url: URL.createObjectURL(file) }))]; if (next.length > 13) setError('Maximum 13 images — extras were skipped.'); setItems(next.slice(0, 13)); };
   const submit = async (e: React.FormEvent) => {
     e.preventDefault(); setError('');
-    if (!title.trim() || !artist.trim() || !file) { setError('Please provide a title, artist name, and image.'); return; }
-    if (file.size > 12 * 1024 * 1024) { setError('Please keep images under 12 MB.'); return; }
+    if (!title.trim() || !artist.trim() || !items.length) { setError('Please provide a title, artist username, and at least one image.'); return; }
+    if (items.some((i) => i.file.size > 12 * 1024 * 1024)) { setError('Please keep each image under 12 MB.'); return; }
     setBusy(true);
-    try { await submitArt({ title: title.trim(), artist_name: artist.trim(), description: description.trim(), rating, file, tags: picked }); onSubmitted(); }
+    try { await submitArtBatch({ title: title.trim(), artist_name: artist.trim(), description: description.trim(), rating, items: items.map(({ file, tags: t }) => ({ file, tags: t })) }); onSubmitted(); }
     catch (err) { setError(err instanceof Error ? err.message : 'Upload failed.'); }
     finally { setBusy(false); }
   };
-  return <div className="modal-backdrop"><form className="modal" onSubmit={submit}><div className="modal-head"><h2>Submit community artwork</h2><button className="btn ghost" type="button" onClick={onClose}><X size={17} /></button></div><div className="modal-body"><div className="upload-note"><strong>Direct submission.</strong> Your image goes to GSN Arena storage and waits for moderation. You do not need to send the artwork to the site owner manually.</div><div className="form-grid"><div className="field"><label>Artwork title</label><input className="text-input" value={title} onChange={e => setTitle(e.target.value)} required /></div><div className="field"><label>Artist name</label><input className="text-input" value={artist} onChange={e => setArtist(e.target.value)} required /></div><div className="field full"><label>Image</label><input className="text-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={e => setFile(e.target.files?.[0] || null)} required /></div><div className="field"><label>Section</label><select className="select-input" value={rating} onChange={e => setRating(e.target.value as ArtworkRating)}><option value="sfw">General</option><option value="nsfw">Mature / NSFW</option></select></div>{tags.length ? <div className="field full"><label>Tags</label><div className="tag-picker">{tags.map((t) => <button type="button" key={t} className={`tag-chip ${picked.includes(t) ? 'on' : ''}`} onClick={() => setPicked(picked.includes(t) ? picked.filter((x) => x !== t) : [...picked, t])}>#{t}</button>)}</div></div> : null}<div className="field full"><label>Description</label><textarea className="text-area" value={description} onChange={e => setDescription(e.target.value)} placeholder="Optional context or caption" /></div></div>{error && <div className="form-error">{error}</div>}</div><div className="modal-foot"><button className="btn ghost" type="button" onClick={onClose}>Cancel</button><button className="btn primary" type="submit" disabled={busy}>{busy ? 'Uploading…' : 'Submit for review'}</button></div></form></div>;
+  return <div className="modal-backdrop"><form className="modal" onSubmit={submit}><div className="modal-head"><h2>Submit community artwork</h2><button className="btn ghost" type="button" onClick={onClose}><X size={17} /></button></div><div className="modal-body"><div className="upload-note"><strong>Up to 13 images.</strong> Each image can have its own tags — type # to search them. Submissions wait for moderation.</div><div className="form-grid"><div className="field"><label>Artwork title</label><input className="text-input" value={title} onChange={e => setTitle(e.target.value)} required /></div><div className="field"><label>Artist username</label><input className="text-input" value={artist} onChange={e => setArtist(e.target.value)} required /></div><div className="field full"><label>Images ({items.length}/13)</label><input className="text-input" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif" disabled={items.length >= 13} onChange={e => { addFiles(e.target.files); e.target.value = ''; }} /></div>{items.map((it, i) => <div className="field full batch-item" key={it.url}><img src={it.url} alt="" /><div style={{ flex: 1 }}><HashTagInput tags={tags} value={it.tags} onChange={(v) => setItems(items.map((x, j) => j === i ? { ...x, tags: v } : x))} /></div><button type="button" className="btn ghost mini" onClick={() => setItems(items.filter((_, j) => j !== i))}><X size={12} /></button></div>)}<div className="field"><label>Section</label><select className="select-input" value={rating} onChange={e => setRating(e.target.value as ArtworkRating)}><option value="sfw">General</option><option value="nsfw">Mature / NSFW</option></select></div><div className="field full"><label>Description</label><textarea className="text-area" value={description} onChange={e => setDescription(e.target.value)} placeholder="Optional context or caption" /></div></div>{error && <div className="form-error">{error}</div>}</div><div className="modal-foot"><button className="btn ghost" type="button" onClick={onClose}>Cancel</button><button className="btn primary" type="submit" disabled={busy}>{busy ? 'Uploading…' : `Submit ${items.length || ''} for review`}</button></div></form></div>;
 }
 
 function CommunityModerationPage({ onChanged }: { onChanged: () => void }) {

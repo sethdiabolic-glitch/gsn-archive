@@ -6,7 +6,7 @@ export function cleanEntryHtml(value: string): string {
     allowedAttributes: { img: ['src', 'alt', 'data-float'], p: ['style'], h2: ['style'], h3: ['style'] },
     allowedStyles: { p: { 'text-align': [/^(left|center|right)$/] }, h2: { 'text-align': [/^(left|center|right)$/] }, h3: { 'text-align': [/^(left|center|right)$/] } },
     allowedSchemes: ['http', 'https'],
-    transformTags: { img: (tag, attribs) => ({ tagName: tag, attribs: { src: attribs.src || '', alt: attribs.alt || '', 'data-float': ['left', 'right'].includes(attribs['data-float'] || '') ? attribs['data-float'] : 'none' } }) },
+    transformTags: { img: (tag, attribs) => ({ tagName: tag, attribs: { src: attribs['src'] || '', alt: attribs['alt'] || '', 'data-float': ['left', 'right'].includes(attribs['data-float'] || '') ? (attribs['data-float'] as string) : 'none' } }) },
   });
 }
 export function legacyToHtml(value: string): string {
