@@ -536,7 +536,7 @@ function TagPicker({ selected, tags, onChange, onAddTag }: { selected: string[];
   </div>;
 }
 
-function EditorModal({ initial, category, onClose, onSave, tags, onAddTag }: { initial?: Entry | undefined; category: Category; onClose: () => void; onSave: (category: Category, entry: Entry, originalName?: string) => void; tags: string[]; onAddTag: (tag: string) => void }) {
+function EditorModal({ initial, category, onClose, onSave }: { initial?: Entry | undefined; category: Category; onClose: () => void; onSave: (category: Category, entry: Entry, originalName?: string) => void }) {
   const [form, setForm] = useState<Entry>(initial ? clone(initial) : { name: '', cls: '', tag: 'LOCAL FILE', summary: '', speed: 'N/A', strength: 'N/A', durability: 'N/A', hypothetical: '', tier: 'Undefined', notes: [], images: [] });
   const isEditing = Boolean(initial);
   const [documentField, setDocumentField] = useState<'summary' | 'hypothetical' | null>(null);
@@ -545,8 +545,8 @@ function EditorModal({ initial, category, onClose, onSave, tags, onAddTag }: { i
   const addNote = () => setField('notes', [...(form.notes || []), { marker: '○', author: 'Community', text: '' }]);
   const updateNote = (index: number, patch: Partial<ArchiveNote>) => setField('notes', (form.notes || []).map((n, i) => i === index ? { ...n, ...patch } : n));
   const submit = (event: React.FormEvent) => { event.preventDefault(); if (!form.name.trim() || !form.cls.trim() || !plainEntryText(form.summary)) { setSaveError('Name, classification and actual summary are required.'); return; } onSave(category, { ...form, name: form.name.trim(), cls: form.cls.trim(), summary: form.summary.trim() }, initial?.name); };
-  if (documentField) return <div className="modal-backdrop"><div className="modal document-modal"><RichEntryEditor key={documentField} title={`${form.name || 'New dossier'} / ${documentField === 'summary' ? 'Actual summary' : 'Hypothetical summary'}`} value={form[documentField] || ''} onBack={() => setDocumentField(null)} onSave={(html) => { setField(documentField, html); setDocumentField(null); }} /></div></div>;
-  return <div className="modal-backdrop"><form className="modal" onSubmit={submit}><div className="modal-head"><h2>{isEditing ? 'Edit dossier' : 'New dossier'}</h2><button className="btn ghost" type="button" aria-label="Close editor" onClick={onClose}><X size={17} /></button></div><div className="modal-body"><div className="form-grid">
+  if (documentField) return <RichEntryEditor key={documentField} title={`${form.name || 'New dossier'} / ${documentField === 'summary' ? 'Actual summary' : 'Hypothetical summary'}`} value={form[documentField] || ''} onBack={() => setDocumentField(null)} onSave={(html) => { setField(documentField, html); setDocumentField(null); }} />;
+  return <form className="dossier-edit-screen" onSubmit={submit}><div className="modal-head"><h2>{isEditing ? 'Edit dossier' : 'New dossier'}</h2><button className="btn ghost" type="button" aria-label="Back to entry" onClick={onClose}><ArrowLeft size={17} /> Back</button></div><div className="modal-body"><div className="form-grid">
     <div className="field"><label>Name</label><input className="text-input" value={form.name} onChange={e => setField('name', e.target.value)} required /></div>
     <div className="field"><label>Classification</label><input className="text-input" value={form.cls} onChange={e => setField('cls', e.target.value)} required /></div>
     <div className="field"><label>File marker</label><input className="text-input" value={form.tag} onChange={e => setField('tag', e.target.value)} /></div>
@@ -558,7 +558,7 @@ function EditorModal({ initial, category, onClose, onSave, tags, onAddTag }: { i
     <div className="field full"><label>Hypothetical summary</label><button className="document-launch" type="button" onClick={() => setDocumentField('hypothetical')}><FileText size={18} /><span>{plainEntryText(form.hypothetical || '').slice(0, 110) || 'Write hypothetical summary'}</span><Pencil size={15}/></button></div>
     <div className="field full"><label>Primary profile image</label><div className="image-pick-row">{form.image ? <img className="image-thumb" src={form.image} alt="" /> : null}<ImagePickButton onUrl={(url) => setField('image', url)} />{form.image ? <button type="button" className="btn ghost mini" onClick={() => setField('image', '')}><X size={12}/> Remove</button> : null}</div></div>
     <div className="field full"><div className="editor-section-head"><label>Notes</label><button type="button" className="btn ghost" onClick={addNote}><Plus size={13}/> Add note</button></div><div className="note-guide">Seth marker: ♤ · Community markers: ○ ● □ ♡ ◇ ♧ ☆ ¤</div>{(form.notes || []).map((note, index) => <div className="editor-subrow note-row" key={index}><select className="select-input note-marker-select" value={note.marker} onChange={e => updateNote(index,{marker:e.target.value as NoteMarker})}>{noteMarkers.map(m=><option key={m}>{m}</option>)}</select><input className="text-input" value={note.author} onChange={e => updateNote(index,{author:e.target.value})} placeholder="Author" /><textarea className="text-area" value={note.text} onChange={e => updateNote(index,{text:e.target.value})} placeholder="Note text. Use *Term* for references." /></div>)}</div>
-  </div>{saveError && <div className="form-error" role="alert">{saveError}</div>}</div><div className="modal-foot"><button className="btn ghost" type="button" onClick={onClose}>Cancel</button><button className="btn primary" type="submit"><Database size={14}/> Save to archive</button></div></form></div>;
+  </div>{saveError && <div className="form-error" role="alert">{saveError}</div>}</div><div className="modal-foot"><button className="btn ghost" type="button" onClick={onClose}>Cancel</button><button className="btn primary" type="submit"><Database size={14}/> Save to archive</button></div></form>;
 }
 
 function EntryBody({ text, data }: { text: string; data: DatabaseState }) {
@@ -678,16 +678,16 @@ function ArtworkSubmitModal({ onClose, onSubmitted, tags }: { onClose: () => voi
   const [artist, setArtist] = useState('');
   const [description, setDescription] = useState('');
   const [rating, setRating] = useState<ArtworkRating>('sfw');
-  const [items, setItems] = useState<{ file: File; tags: string[]; url: string }[]>([]);
+  const [items, setItems] = useState<{ file: File; tags: string[]; title: string; url: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const addFiles = (list: FileList | null) => { if (!list) return; const next = [...items, ...Array.from(list).map((file) => ({ file, tags: [] as string[], url: URL.createObjectURL(file) }))]; if (next.length > 13) setError('Maximum 13 images — extras were skipped.'); setItems(next.slice(0, 13)); };
+  const addFiles = (list: FileList | null) => { if (!list) return; const next = [...items, ...Array.from(list).map((file) => ({ file, tags: [] as string[], title: title.trim(), url: URL.createObjectURL(file) }))]; if (next.length > 13) setError('Maximum 13 images — extras were skipped.'); setItems(next.slice(0, 13)); };
   const submit = async (e: React.FormEvent) => {
     e.preventDefault(); setError('');
-    if (!title.trim() || !artist.trim() || !items.length) { setError('Please provide a title, artist username, and at least one image.'); return; }
+    if (!artist.trim() || !items.length || items.some((item) => !item.title.trim())) { setError('Please provide an artist username and a title for each image.'); return; }
     if (items.some((i) => i.file.size > 12 * 1024 * 1024)) { setError('Please keep each image under 12 MB.'); return; }
     setBusy(true);
-    try { await submitArtBatch({ title: title.trim(), artist_name: artist.trim(), description: description.trim(), rating, items: items.map(({ file, tags: t }) => ({ file, tags: t })) }); onSubmitted(); }
+    try { await submitArtBatch({ title: title.trim(), artist_name: artist.trim(), description: description.trim(), rating, items: items.map(({ file, tags: t, title: imageTitle }) => ({ file, tags: t, title: imageTitle })) }); onSubmitted(); }
     catch (err) { setError(err instanceof Error ? err.message : 'Upload failed.'); }
     finally { setBusy(false); }
   };
