@@ -103,3 +103,12 @@ export async function deleteMyArt(art: Artwork): Promise<void> {
   const i = art.image_url.indexOf(marker);
   if (i >= 0) await supabase.storage.from('community-art').remove([art.image_url.slice(i + marker.length)]);
 }
+
+export async function submitArtBatch(input: { title: string; artist_name: string; description: string; rating: ArtworkRating; items: { file: File; tags: string[] }[] }): Promise<void> {
+  if (input.items.length > 13) throw new Error('You can upload up to 13 images at once.');
+  for (let i = 0; i < input.items.length; i++) {
+    const it = input.items[i]!;
+    const title = input.items.length > 1 ? `${input.title} (${i + 1}/${input.items.length})` : input.title;
+    await submitArt({ title, artist_name: input.artist_name, description: input.description, rating: input.rating, file: it.file, tags: it.tags });
+  }
+}

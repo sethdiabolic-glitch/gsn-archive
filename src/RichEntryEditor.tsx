@@ -11,7 +11,7 @@ const FlowImage = Image.extend({
   addAttributes() {
     return {
       ...this.parent?.(),
-      float: { default: 'none', parseHTML: element => element.getAttribute('data-float') || 'none', renderHTML: attributes => ({ 'data-float': attributes.float }) },
+      float: { default: 'none', parseHTML: element => element.getAttribute('data-float') || 'none', renderHTML: attributes => ({ 'data-float': attributes['float'] }) },
     };
   },
 });
@@ -47,7 +47,7 @@ export function RichEntryEditor({ title, value, onSave, onBack }: { title: strin
       {cmd('Align right', !!editor?.isActive({ textAlign: 'right' }), () => editor?.chain().focus().setTextAlign('right').run(), <AlignRight size={17}/>)}
       <span className="tool-divider"/>
       <label className="editor-tool" title="Insert image" aria-label="Insert image"><Upload size={17}/><input hidden type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={busy} onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void insertImage(file); }}/></label>
-      {editor?.isActive('image') && <select aria-label="Image text wrap" className="select-input wrap-select" value={editor.getAttributes('image').float || 'none'} onChange={e => editor.chain().focus().updateAttributes('image', { float: e.target.value }).run()}><option value="none">Image: full width</option><option value="left">Wrap text right</option><option value="right">Wrap text left</option></select>}
+      {editor?.isActive('image') && <select aria-label="Image text wrap" className="select-input wrap-select" value={editor.getAttributes('image')['float'] || 'none'} onChange={e => editor.chain().focus().updateAttributes('image', { float: e.target.value }).run()}><option value="none">Image: full width</option><option value="left">Wrap text right</option><option value="right">Wrap text left</option></select>}
       <span className="tool-divider"/>
       {cmd('Undo', false, () => editor?.chain().focus().undo().run(), <Undo2 size={17}/>)}
       {cmd('Redo', false, () => editor?.chain().focus().redo().run(), <Redo2 size={17}/>)}
