@@ -292,7 +292,8 @@ function AppContent() {
           <div className="crumb"><span>GSN /</span><strong>{currentTitle}</strong></div>
           <button className="search-trigger" type="button" data-testid="button-search-archive" onClick={() => setSearchOpen(true)}><Search size={15} /><span>Search the archive</span><kbd>⌘ K</kbd></button>
         </header>
-        <main className="content">
+        <main className={`content ${editing ? 'content-editing' : ''}`}>
+          {editing ? <EditorModal initial={editing.entry} category={editing.category} onClose={() => setEditing(null)} onSave={saveEntry} /> : <>
           {page === 'home' && <HomePage data={data} navigate={navigate} openEntry={openEntry} />}
           {activeCategory && <CategoryPage category={activeCategory} data={data} openEntry={openEntry} />}
           {page === 'tier-list' && <TierListPage data={data} openEntry={openEntry} />}
@@ -303,11 +304,11 @@ function AppContent() {
           {mode === 'editor' && page === 'community-editor' && <CommunityModerationPage onChanged={() => setArtRefresh((v) => v + 1)} />}
           {page === 'entry' && entryCategory && <DossierPage category={entryCategory} name={activeEntry} data={data} onBack={() => window.history.length > 1 ? window.history.back() : navigate('/')} onEdit={mode === 'editor' ? (entry) => setEditing({ category: entryCategory, entry }) : undefined} />}
           {page === 'entry' && !entryCategory && <NotFound navigate={navigate} />}
+          </>}
         </main>
       </div>
       {sidebarOpen && <button className="modal-backdrop" type="button" aria-label="Close navigation" data-testid="button-close-navigation" onClick={() => setSidebarOpen(false)} style={{ zIndex: 15, background: 'rgba(0,0,0,.5)' }} />}
       {searchOpen && <SearchModal data={data} term={searchTerm} setTerm={setSearchTerm} onClose={() => { setSearchOpen(false); setSearchTerm(''); }} onOpen={(category, name) => { setSearchOpen(false); setSearchTerm(''); openEntry(category, name); }} />}
-      {editing && <EditorModal initial={editing.entry} category={editing.category} onClose={() => setEditing(null)} onSave={saveEntry} tags={imageTags} onAddTag={addImageTag} />}
       {toast && <div className="toast" role="status" data-testid="status-toast">{toast}</div>}
       {showAuth && <EmailAuthModal onClose={() => setShowAuth(false)} />}
     </div>
@@ -424,8 +425,8 @@ function TierListPage({ data, openEntry }: { data: DatabaseState; openEntry: (ca
 
 type CombatantRef = { category: Category; name: string };
 
-function CombatantAvatar({ entry, size }: { entry: Entry; size: 'small' | 'big' }) {
-  return <div className={`gsn-av ${size}`}>{entry.image ? <img src={entry.image} alt={entry.name} /> : entry.name.charAt(0)}</div>;
+function CombatantAvatar({ entry, category, size }: { entry: Entry; category: Category; size: 'small' | 'big' }) {
+  return <div className={`gsn-av ${size} category-glow`} style={{ '--profile-glow': `var(--category-${category})` } as React.CSSProperties}>{entry.image ? <img src={entry.image} alt={entry.name} /> : entry.name.charAt(0)}</div>;
 }
 
 function ComparePage({ data }: { data: DatabaseState; openEntry: (category: Category, name: string) => void }) {
@@ -459,7 +460,7 @@ function ComparePage({ data }: { data: DatabaseState; openEntry: (category: Cate
         const taken = selection.a?.name === ref.name || selection.b?.name === ref.name;
         const selected = pending?.category === ref.category && pending.name === ref.name;
         return <button key={`${ref.category}-${ref.name}`} type="button" className={`gsn-upgrade-picker-card${taken ? ' disabled' : ''}${selected ? ' selected' : ''}`} onClick={() => setPending(ref)} disabled={taken}>
-          <CombatantAvatar entry={record.item} size="small" /><span>{record.item.name}</span>
+          <CombatantAvatar entry={record.item} category={record.category} size="small" /><span>{record.item.name}</span>
         </button>;
       })}</div>
     </section>)}
@@ -468,7 +469,7 @@ function ComparePage({ data }: { data: DatabaseState; openEntry: (category: Cate
 
   const fighter = (side: 'a' | 'b', record: typeof left, label: string) => <div className="gsn-upgrade-fighter">
     <div className="eyebrow">{label}</div>
-    {record ? <><CombatantAvatar entry={record.item} size="big" /><strong>{record.item.name}</strong><small>{categoryMeta[record.category].label.toUpperCase()}</small></> : <div className="empty-state">AWAITING SUBJECT</div>}
+    {record ? <><CombatantAvatar entry={record.item} category={record.category} size="big" /><strong>{record.item.name}</strong><small>{categoryMeta[record.category].label.toUpperCase()}</small></> : <div className="empty-state">AWAITING SUBJECT</div>}
     <button className="btn primary" type="button" onClick={() => { setPicker(side); setPending(selection[side]); }}>{record ? 'Change fighter' : 'Choose fighter'}</button>
   </div>;
   const winner = left && right && roll !== null ? (roll < .5 ? left : right) : undefined;
@@ -480,7 +481,7 @@ function ComparePage({ data }: { data: DatabaseState; openEntry: (category: Cate
     <p className="lede">Pick two filed subjects and let the archive decide.</p>
     <div className="notice-box"><p><strong>Heads up: </strong>for now Compare picks a random winner. It is just for fun, not a power scale. Real rankings live on the Tier List.</p><div className="row-actions"><button className="btn ghost" type="button" onClick={() => navigate('/community')}>Share an idea</button><button className="btn ghost" type="button" onClick={() => navigate('/tier-list')}>Open Tier List</button></div></div>
     <div className="gsn-upgrade-arena">{fighter('a', left, 'COMBATANT A')}{fighter('b', right, 'COMBATANT B')}<div className="gsn-upgrade-vs"><span>VS</span></div></div>
-    {winner && loser && <div className="gsn-upgrade-result"><div className="gsn-upgrade-winner"><div className="crown" aria-hidden="true">♛</div><div className="word">Winner!</div><CombatantAvatar entry={winner.item} size="big" /><div className="name">{winner.item.name}</div><small>chosen at random</small></div><div className="gsn-upgrade-narrative">The archive rolled the dice and {winner.item.name} beat {loser.item.name}. It is a coin flip for now, so don’t start a war over it.</div><div className="gsn-upgrade-score"><button className="btn ghost" type="button" onClick={() => setRoll(Math.random())}>Roll again</button></div></div>}
+    {winner && loser && <div className="gsn-upgrade-result"><div className="gsn-upgrade-winner"><div className="crown" aria-hidden="true">♛</div><div className="word">Winner!</div><CombatantAvatar entry={winner.item} category={winner.category} size="big" /><div className="name">{winner.item.name}</div><small>chosen at random</small></div><div className="gsn-upgrade-narrative">The archive rolled the dice and {winner.item.name} beat {loser.item.name}. It is a coin flip for now, so don’t start a war over it.</div><div className="gsn-upgrade-score"><button className="btn ghost" type="button" onClick={() => setRoll(Math.random())}>Roll again</button></div></div>}
   </div>;
 }
 
@@ -491,7 +492,7 @@ function DossierPage({ category, name, data, onBack, onEdit }: { category: Categ
   return <article className="dossier">
     <button className="back-link" type="button" onClick={onBack} data-testid="button-back-dossier"><ArrowLeft size={14} /> Return to {meta.label}</button>
     <div className="dossier-top"><div><div className="dossier-tag" style={{ color: meta.color }}>{entry.tag} / {meta.label}</div><h1 className="dossier-title">{entry.name}</h1><div className="dossier-class">{entry.cls}</div></div><div className="dossier-actions">{onEdit && <button className="btn" type="button" onClick={() => onEdit(entry)} data-testid="button-edit-dossier"><Pencil size={14} /> Edit file</button>}</div></div>
-    {entry.image && <figure className="dossier-profile"><img src={entry.image} alt={entry.name} /></figure>}
+    {entry.image && <figure className="dossier-profile category-glow" style={{ '--profile-glow': `var(--category-${category})` } as React.CSSProperties}><img src={entry.image} alt={entry.name} /></figure>}
     <div className="dossier-summary"><EntryBody text={entry.summary} data={data} /></div>
     {entry.images?.length ? <div className="dossier-images">{(entry.images || []).map((image, index) => <figure key={`${image.url}-${index}`}><img src={image.url} alt={image.alt || entry.name} loading="lazy" /><figcaption>{image.tags?.length ? image.tags.map((tag) => `#${tag}`).join(' ') : 'ARCHIVE IMAGE'}</figcaption></figure>)}</div> : null}
     <div className="specs">{[['Speed', entry.speed], ['Power / Strength', entry.strength], ['Durability', entry.durability]].map(([label, value]) => <div className="spec" key={label}><div className="spec-label">{label}</div><div className="spec-value">{value}</div></div>)}</div>
