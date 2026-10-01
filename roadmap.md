@@ -1,5 +1,6 @@
 - [x] Match reference-style archive editing with separate rich Summary and Hypothetical pages, flowing inline images, and one leading profile photo.
 - [x] Add fan-art sorting by artist username and tag search; allow up to 13 images with per-image predefined tags.
 - [ ] Verify editing and upload flows while signed in as admin (needs the user's session).
-- [ ] Move dossier editing to its own screen, with separate full-page summary editors.
-- [ ] Color circular profile glows by archive category and support a title for each uploaded artwork image.
+- [x] Move dossier editing to its own screen, with separate full-page summary editors.
+- [x] Color circular profile glows by archive category and support a title for each uploaded artwork image.
+- [x] Polish editor controls and shared buttons for clearer everyday use.
