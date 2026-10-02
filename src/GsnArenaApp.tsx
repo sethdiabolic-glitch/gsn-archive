@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { RichEntryEditor } from './RichEntryEditor';
+import { CommsBanner, MuteToggle, playVoice, rollVoice, VOICE_WEIGHTS, type VoiceLine } from './VoiceComms';
 import { cleanEntryHtml, plainEntryText } from './lib/entry-content';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import { getArt, getPendingArt, isGsnAdmin, setArtStatus, submitArtBatch, supabase, uploadArchiveImage, deleteMyArt, type Artwork, type ArtworkRating } from './lib/community';
+import { getArt, getPendingArt, isGsnAdmin, setArtStatus, submitArtBatch, supabase, uploadArchiveImage, uploadArchiveFile, deleteMyArt, type Artwork, type ArtworkRating } from './lib/community';
 import { deleteArchiveEntry, loadArchive, saveArchiveEntry, seedArchive } from './lib/archive';
 import {
   Archive, ArrowLeft, ArrowRight, BookOpen, ChevronRight, CircleDot, Database,
@@ -30,6 +31,7 @@ type Entry = {
   images?: ArchiveImage[];
   notes?: ArchiveNote[];
   createdAt?: string;
+  voices?: (VoiceLine | undefined)[];
 };
 type LegalTerms = { content: string; updated_at?: string };
 type DatabaseState = Record<Category, Entry[]> & { settings?: { name: string; data: any }[] };
@@ -258,8 +260,8 @@ function AppContent() {
           <NavButton active={page === 'terms'} icon={<FileText size={16} />} onClick={() => navigate('/terms')}>Terms</NavButton>
           <div className="nav-label" style={{ marginTop: 18 }}>Archive sectors</div>
           {categories.map((category) => (
-            <NavButton key={category} active={activeCategory === category} icon={iconFor(category)} onClick={() => navigate(`/${category}`)}>
-              {categoryMeta[category].label}<span className="nav-count">{data[category].length.toString().padStart(2, '0')}</span>
+            <NavButton key={category} active={activeCategory === category} icon={iconFor(category)} accent={`var(--category-${category})`} count={data[category].length} onClick={() => navigate(`/${category}`)}>
+              {categoryMeta[category].label}
             </NavButton>
           ))}
           {mode === 'public' && <>
@@ -287,10 +289,12 @@ function AppContent() {
           <button className="menu-button" type="button" aria-label="Open navigation" data-testid="button-open-navigation" onClick={() => setSidebarOpen(true)}><Menu size={18} /></button>
           <div className="mobile-brand"><img src="/gsn-logo.png" alt="" />GSN <span>ARENA</span></div>
           <button className="menu-button" type="button" aria-label="Search archive" data-testid="button-mobile-search" onClick={() => setSearchOpen(true)}><Search size={17} /></button>
+          <MuteToggle className="menu-button" />
         </div>
         <header className="topbar">
           <div className="crumb"><span>GSN /</span><strong>{currentTitle}</strong></div>
           <button className="search-trigger" type="button" data-testid="button-search-archive" onClick={() => setSearchOpen(true)}><Search size={15} /><span>Search the archive</span><kbd>⌘ K</kbd></button>
+          <MuteToggle />
         </header>
         <main className={`content ${editing ? 'content-editing' : ''}`}>
           {editing ? <EditorModal initial={editing.entry} category={editing.category} onClose={() => setEditing(null)} onSave={saveEntry} /> : <>
@@ -309,14 +313,19 @@ function AppContent() {
       </div>
       {sidebarOpen && <button className="modal-backdrop" type="button" aria-label="Close navigation" data-testid="button-close-navigation" onClick={() => setSidebarOpen(false)} style={{ zIndex: 15, background: 'rgba(0,0,0,.5)' }} />}
       {searchOpen && <SearchModal data={data} term={searchTerm} setTerm={setSearchTerm} onClose={() => { setSearchOpen(false); setSearchTerm(''); }} onOpen={(category, name) => { setSearchOpen(false); setSearchTerm(''); openEntry(category, name); }} />}
+      <CommsBanner />
       {toast && <div className="toast" role="status" data-testid="status-toast">{toast}</div>}
       {showAuth && <EmailAuthModal onClose={() => setShowAuth(false)} />}
     </div>
   );
 }
 
-function NavButton({ active, icon, children, onClick }: { active: boolean; icon: React.ReactNode; children: React.ReactNode; onClick: () => void }) {
-  return <button className={`nav-item ${active ? 'active' : ''}`} type="button" onClick={onClick} data-testid={`nav-${String(children).toLowerCase().replaceAll(' ', '-')}`}>{icon}{children}</button>;
+function NavButton({ active, icon, children, onClick, accent, count }: { active: boolean; icon: React.ReactNode; children: React.ReactNode; onClick: () => void; accent?: string; count?: number }) {
+  return <button className={`nav-item ${active ? 'active' : ''}`} type="button" onClick={onClick} aria-current={active ? 'page' : undefined} style={accent ? { '--nav-accent': accent } as React.CSSProperties : undefined} data-testid={`nav-${String(children).toLowerCase().replaceAll(' ', '-')}`}>
+    <span className="nav-icon">{icon}</span><span className="nav-text">{children}</span>
+    {count !== undefined && <span className="nav-count">[ {String(count).padStart(2, '0')} ]</span>}
+    <span className="nav-chevron" aria-hidden="true"><ChevronRight size={13} /></span>
+  </button>;
 }
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -474,6 +483,10 @@ function ComparePage({ data }: { data: DatabaseState; openEntry: (category: Cate
   </div>;
   const winner = left && right && roll !== null ? (roll < .5 ? left : right) : undefined;
   const loser = winner === left ? right : left;
+  useEffect(() => {
+    const line = winner?.item.voices?.[4];
+    if (winner && line?.url) playVoice({ name: winner.item.name, image: winner.item.image, category: winner.category, line, victory: true });
+  }, [roll, winner?.item.name]);
 
   return <div className="gsn-upgrade-compare">
     <div className="eyebrow compare-accent">Simulation chamber / 1v1 / for fun</div>
@@ -487,6 +500,10 @@ function ComparePage({ data }: { data: DatabaseState; openEntry: (category: Cate
 
 function DossierPage({ category, name, data, onBack, onEdit }: { category: Category; name: string; data: DatabaseState; onBack: () => void; onEdit?: ((entry: Entry) => void) | undefined }) {
   const entry = data[category].find((item) => item.name === name);
+  useEffect(() => {
+    const line = rollVoice(entry?.voices);
+    if (entry && line) playVoice({ name: entry.name, image: entry.image, category, line });
+  }, [category, name]);
   if (!entry) return <NotFound navigate={onBack} />;
   const meta = categoryMeta[category];
   return <article className="dossier">
@@ -527,6 +544,23 @@ function ImagePickButton({ onUrl }: { onUrl: (url: string) => void }) {
     {err && <span className="form-error">{err}</span>}</label>;
 }
 
+function VoiceSlot({ index, value, onChange }: { index: number; value: VoiceLine | undefined; onChange: (v: VoiceLine | undefined) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [playing, setPlaying] = useState<HTMLAudioElement | null>(null);
+  const label = index === 4 ? 'Audio 5 · Victory (100% on win)' : `Audio ${index + 1} · ${VOICE_WEIGHTS[index]}% chance`;
+  const preview = () => { if (playing) { playing.pause(); setPlaying(null); return; } if (!value?.url) return; const a = new Audio(value.url); a.onended = () => setPlaying(null); void a.play(); setPlaying(a); };
+  return <div className="voice-slot"><div className="voice-slot-label">{label}</div>
+    <div className="voice-slot-row">
+      <label className="btn ghost mini pick-btn">{busy ? 'Uploading…' : <><Upload size={12} /> {value?.url ? 'Replace audio' : 'Choose audio'}</>}<input type="file" accept="audio/*" hidden disabled={busy} onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; if (f.size > 10 * 1024 * 1024) { setErr('Keep audio under 10 MB.'); return; } setBusy(true); setErr(''); try { onChange({ url: await uploadArchiveFile(f), text: value?.text || '' }); } catch (x) { setErr(x instanceof Error ? x.message : 'Upload failed'); } finally { setBusy(false); } }} /></label>
+      {value?.url && <button type="button" className="btn ghost mini" onClick={preview}>{playing ? 'Stop' : 'Play'}</button>}
+      {value?.url && <button type="button" className="btn ghost mini" onClick={() => onChange(undefined)}><X size={12} /> Remove</button>}
+    </div>
+    <input className="text-input" value={value?.text || ''} disabled={!value?.url} placeholder={value?.url ? 'Line text shown in the notification' : 'Upload audio first'} onChange={(e) => value && onChange({ ...value, text: e.target.value })} />
+    {err && <span className="form-error">{err}</span>}
+  </div>;
+}
+
 function TagPicker({ selected, tags, onChange, onAddTag }: { selected: string[]; tags: string[]; onChange: (tags: string[]) => void; onAddTag: (tag: string) => void }) {
   const [draft, setDraft] = useState('');
   const toggle = (t: string) => onChange(selected.includes(t) ? selected.filter((x) => x !== t) : [...selected, t]);
@@ -557,6 +591,8 @@ function EditorModal({ initial, category, onClose, onSave }: { initial?: Entry |
     <div className="field"><label>Durability</label><input className="text-input" value={form.durability} onChange={e => setField('durability', e.target.value)} /></div>
     <div className="field full summary-field"><label>Hypothetical summary</label><button className="document-launch" type="button" onClick={() => setDocumentField('hypothetical')}><span className="document-launch-icon"><FileText size={20} /></span><span><strong>Open hypothetical editor</strong><small>{plainEntryText(form.hypothetical || '').slice(0, 110) || 'No hypothesis written yet'}</small></span><Pencil size={16}/></button></div>
     <div className="field full"><label>Primary profile image</label><div className="image-pick-row">{form.image ? <img className="image-thumb" src={form.image} alt="" /> : null}<ImagePickButton onUrl={(url) => setField('image', url)} />{form.image ? <button type="button" className="btn ghost mini" onClick={() => setField('image', '')}><X size={12}/> Remove</button> : null}</div></div>
+    <div className="field full"><div className="edit-section-label">Voice lines</div><div className="note-guide">Lines 1–4 play when someone opens this entry (chances shown; empty slots are skipped). Line 5 plays when this character wins in Compare.</div>
+      {[0, 1, 2, 3, 4].map((i) => <VoiceSlot key={i} index={i} value={form.voices?.[i]} onChange={(v) => { const next = [...(form.voices || [])]; while (next.length < 5) next.push(undefined); next[i] = v; setField('voices', next); }} />)}</div>
     <div className="field full"><div className="editor-section-head"><label>Notes</label><button type="button" className="btn ghost" onClick={addNote}><Plus size={13}/> Add note</button></div><div className="note-guide">Seth marker: ♤ · Community markers: ○ ● □ ♡ ◇ ♧ ☆ ¤</div>{(form.notes || []).map((note, index) => <div className="editor-subrow note-row" key={index}><select className="select-input note-marker-select" value={note.marker} onChange={e => updateNote(index,{marker:e.target.value as NoteMarker})}>{noteMarkers.map(m=><option key={m}>{m}</option>)}</select><input className="text-input" value={note.author} onChange={e => updateNote(index,{author:e.target.value})} placeholder="Author" /><textarea className="text-area" value={note.text} onChange={e => updateNote(index,{text:e.target.value})} placeholder="Note text. Use *Term* for references." /></div>)}</div>
   </div>{saveError && <div className="form-error" role="alert">{saveError}</div>}</div><div className="modal-foot edit-screen-foot"><span>Changes are published when you save.</span><div><button className="btn ghost" type="button" onClick={onClose}>Cancel</button><button className="btn primary" type="submit"><Database size={14}/> Save to archive</button></div></div></form>;
 }
@@ -640,6 +676,14 @@ function CommunityArtPage({ artworks, onSubmitted, tags, userId, onToast }: { ar
   const visible = artworks.filter((art) => art.rating === tab && (!tagFilter || (art.tags || []).includes(tagFilter)) && (!artistFilter || art.artist_name === artistFilter)).sort((a, b) => sortBy === 'artist' ? a.artist_name.localeCompare(b.artist_name) : sortBy === 'tag' ? ((a.tags || [])[0] || '~').localeCompare((b.tags || [])[0] || '~') : b.created_at.localeCompare(a.created_at));
   const [showAuth, setShowAuth] = useState(false);
   const signIn = () => { if (supabase) setShowAuth(true); };
+  const PER_PAGE = 24;
+  const [pageNo, setPageNo] = useState(0);
+  const [viewing, setViewing] = useState<Artwork | null>(null);
+  useEffect(() => setPageNo(0), [tab, tagFilter, artistFilter, sortBy]);
+  const pages = Math.max(1, Math.ceil(visible.length / PER_PAGE));
+  const current = Math.min(pageNo, pages - 1);
+  const shown = visible.slice(current * PER_PAGE, current * PER_PAGE + PER_PAGE);
+  const goPage = (n: number) => { setPageNo(n); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   return <>
     <div className="eyebrow" style={{ color: '#d93f7a' }}>Community archive / artist submissions</div>
     <h1 className="display-title">Community <em>Art</em></h1>
@@ -658,8 +702,10 @@ function CommunityArtPage({ artworks, onSubmitted, tags, userId, onToast }: { ar
     {tags.length ? <div className="tag-picker" style={{ marginBottom: 18 }}><button type="button" className={`tag-chip ${!tagFilter ? 'on' : ''}`} onClick={() => setTagFilter('')}>All</button>{tags.map((t) => <button type="button" key={t} className={`tag-chip ${tagFilter === t ? 'on' : ''}`} onClick={() => setTagFilter(tagFilter === t ? '' : t)}>#{t}</button>)}</div> : null}
     <div className="art-sort-row"><label>Sort <select className="select-input" value={sortBy} onChange={(e) => setSortBy(e.target.value as 'newest' | 'artist' | 'tag')}><option value="newest">Newest</option><option value="artist">Artist (A–Z)</option><option value="tag">Tag (A–Z)</option></select></label><label>Artist <select className="select-input" value={artistFilter} onChange={(e) => setArtistFilter(e.target.value)}><option value="">All artists</option>{artists.map((a) => <option key={a} value={a}>{a}</option>)}</select></label></div>
     <div className="art-grid">
-      {visible.length ? visible.map((art) => <article className="art-card" key={art.id}><img src={art.image_url} alt={art.title} loading="lazy" /><div className="art-card-body"><div className="art-card-title">{art.title}</div><div className="art-card-meta">by {art.artist_name}</div>{art.description && <p>{art.description}</p>}{art.tags?.length ? <div className="art-card-meta">{art.tags.map((t) => `#${t}`).join(' ')}</div> : null}{userId && art.user_id === userId ? <button type="button" className="btn danger mini" style={{ marginTop: 8 }} onClick={() => takeDown(art)}><Trash2 size={12} /> Take down</button> : null}</div></article>) : <EmptyState text="No approved artwork in this section yet." />}
+      {shown.length ? shown.map((art) => <article className="art-card" key={art.id}><button type="button" className="art-open" onClick={() => setViewing(art)} aria-label={`View ${art.title}`}><img src={art.image_url} alt={art.title} loading="lazy" /></button><div className="art-card-body"><div className="art-card-title">{art.title}</div><div className="art-card-meta">by {art.artist_name}</div>{art.description && <p>{art.description}</p>}{art.tags?.length ? <div className="art-card-meta">{art.tags.map((t) => `#${t}`).join(' ')}</div> : null}{userId && art.user_id === userId ? <button type="button" className="btn danger mini" style={{ marginTop: 8 }} onClick={() => takeDown(art)}><Trash2 size={12} /> Take down</button> : null}</div></article>) : <EmptyState text="No approved artwork in this section yet." />}
     </div>
+    {pages > 1 && <nav className="pager" aria-label="Artwork pages"><button type="button" className="btn ghost mini" disabled={current === 0} onClick={() => goPage(current - 1)}><ArrowLeft size={12} /> Prev</button>{Array.from({ length: pages }, (_, i) => <button type="button" key={i} className={`btn mini ${i === current ? 'primary' : 'ghost'}`} aria-current={i === current ? 'page' : undefined} onClick={() => goPage(i)}>{i + 1}</button>)}<button type="button" className="btn ghost mini" disabled={current >= pages - 1} onClick={() => goPage(current + 1)}>Next <ArrowRight size={12} /></button></nav>}
+    {viewing && <div className="lightbox" role="dialog" aria-label={viewing.title} onClick={() => setViewing(null)}><figure onClick={(e) => e.stopPropagation()}><button type="button" className="lightbox-close" aria-label="Close" onClick={() => setViewing(null)}><X size={18} /></button><img src={viewing.image_url} alt={viewing.title} /><figcaption><strong>{viewing.title}</strong><span>by {viewing.artist_name}{viewing.tags?.length ? ` · ${viewing.tags.map((t) => `#${t}`).join(' ')}` : ''}</span>{viewing.description && <p>{viewing.description}</p>}</figcaption></figure></div>}
     {showSubmit && <ArtworkSubmitModal tags={tags} onClose={() => setShowSubmit(false)} onSubmitted={() => { setShowSubmit(false); onSubmitted(); }} />}
     {showAuth && <EmailAuthModal onClose={() => setShowAuth(false)} />}
     {showNsfwNotice && <div className="modal-backdrop"><div className="warning-modal"><AlertTriangle size={28} /><h2>Mature content ahead</h2><p>This section is reserved for adult/NSFW artwork. Nothing here is presented as part of the core lore archive. If you do not want to view mature material, choose General instead.</p><button className="btn primary" onClick={() => setShowNsfwNotice(false)}>I understand</button></div></div>}
