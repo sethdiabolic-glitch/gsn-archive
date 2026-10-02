@@ -120,7 +120,7 @@ export async function uploadArchiveFile(file: File, prefix = 'voice'): Promise<s
   if (!user) throw new Error('Please sign in first.');
   const ext = file.name.split('.').pop()?.toLowerCase() || 'mp3';
   const path = `${user.id}/${prefix}-${crypto.randomUUID()}.${ext}`;
-  const { error } = await supabase.storage.from('community-art').upload(path, file, { upsert: false, contentType: file.type || undefined });
+  const { error } = await supabase.storage.from('community-art').upload(path, file, file.type ? { upsert: false, contentType: file.type } : { upsert: false });
   if (error) throw error;
   return supabase.storage.from('community-art').getPublicUrl(path).data.publicUrl;
 }
