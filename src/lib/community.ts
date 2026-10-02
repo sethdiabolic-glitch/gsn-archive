@@ -113,3 +113,14 @@ export async function submitArtBatch(input: { title: string; artist_name: string
     await submitArt({ title, artist_name: input.artist_name, description: input.description, rating: input.rating, file: it.file, tags: it.tags });
   }
 }
+
+export async function uploadArchiveFile(file: File, prefix = 'voice'): Promise<string> {
+  if (!supabase) throw new Error('Storage is not connected.');
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Please sign in first.');
+  const ext = file.name.split('.').pop()?.toLowerCase() || 'mp3';
+  const path = `${user.id}/${prefix}-${crypto.randomUUID()}.${ext}`;
+  const { error } = await supabase.storage.from('community-art').upload(path, file, file.type ? { upsert: false, contentType: file.type } : { upsert: false });
+  if (error) throw error;
+  return supabase.storage.from('community-art').getPublicUrl(path).data.publicUrl;
+}
