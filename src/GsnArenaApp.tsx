@@ -289,7 +289,6 @@ function AppContent() {
           <button className="menu-button" type="button" aria-label="Open navigation" data-testid="button-open-navigation" onClick={() => setSidebarOpen(true)}><Menu size={18} /></button>
           <div className="mobile-brand"><img src="/gsn-logo.png" alt="" />GSN <span>ARENA</span></div>
           <button className="menu-button" type="button" aria-label="Search archive" data-testid="button-mobile-search" onClick={() => setSearchOpen(true)}><Search size={17} /></button>
-          <MuteToggle className="menu-button" />
         </div>
         <header className="topbar">
           <div className="crumb"><span>GSN /</span><strong>{currentTitle}</strong></div>
