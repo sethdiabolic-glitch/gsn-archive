@@ -394,7 +394,7 @@ function Stat({ value, label }: { value: string | number; label: string }) {
 
 function CategoryPage({ category, data, openEntry }: { category: Category; data: DatabaseState; openEntry: (category: Category, name: string) => void }) {
   const [filter, setFilter] = useState('');
-  const entries = useMemo(() => data[category].filter((entry) => `${entry.name} ${entry.cls} ${plainEntryText(entry.summary)}`.toLowerCase().includes(filter.toLowerCase())), [category, data, filter]);
+  const entries = useMemo(() => data[category].filter((entry) => `${entry.name} ${entry.cls} ${plainEntryText(entry.summary)}`.toLowerCase().includes(filter.toLowerCase())).sort((a, b) => a.name.localeCompare(b.name)), [category, data, filter]);
   const meta = categoryMeta[category];
   return (
     <>
@@ -455,6 +455,12 @@ function ComparePage({ data }: { data: DatabaseState; openEntry: (category: Cate
     setPending(null);
     setRoll(Math.random());
   };
+  const winner = left && right && roll !== null ? (roll < .5 ? left : right) : undefined;
+  useEffect(() => {
+    if (picker) return;
+    const line = victoryLine(winner?.item);
+    if (winner && line) playVoice({ name: winner.item.name, image: winner.item.image, category: winner.category, line, victory: true });
+  }, [roll, winner?.item.name]);
 
   if (picker) return <div className="gsn-upgrade-compare">
     <button className="back-link" type="button" onClick={() => { setPicker(null); setPending(null); }}>← Return to comparison</button>
@@ -480,12 +486,7 @@ function ComparePage({ data }: { data: DatabaseState; openEntry: (category: Cate
     {record ? <><CombatantAvatar entry={record.item} category={record.category} size="big" /><strong>{record.item.name}</strong><small>{categoryMeta[record.category].label.toUpperCase()}</small></> : <div className="empty-state">AWAITING SUBJECT</div>}
     <button className="btn primary" type="button" onClick={() => { setPicker(side); setPending(selection[side]); }}>{record ? 'Change fighter' : 'Choose fighter'}</button>
   </div>;
-  const winner = left && right && roll !== null ? (roll < .5 ? left : right) : undefined;
   const loser = winner === left ? right : left;
-  useEffect(() => {
-    const line = winner?.item.voices?.[4];
-    if (winner && line?.url) playVoice({ name: winner.item.name, image: winner.item.image, category: winner.category, line, victory: true });
-  }, [roll, winner?.item.name]);
 
   return <div className="gsn-upgrade-compare">
     <div className="eyebrow compare-accent">Simulation chamber / 1v1 / for fun</div>
