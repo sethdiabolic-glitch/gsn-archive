@@ -5,17 +5,35 @@ export type VoiceLine = { url: string; text: string };
 export type VoiceEvent = { name: string; image?: string | undefined; category: string; line: VoiceLine; victory?: boolean };
 const EVT = 'gsn-voice';
 const MUTE_KEY = 'gsnVoiceMuted';
-export const VOICE_WEIGHTS = [40, 30, 20, 10];
-
 export function isMuted() { try { return localStorage.getItem(MUTE_KEY) === '1'; } catch { return false; } }
 
-/** Weighted roll across slots 1-4; missing slots are skipped and the rest re-normalised. */
-export function rollVoice(voices: (VoiceLine | undefined)[] | undefined): VoiceLine | undefined {
-  const pool = VOICE_WEIGHTS.map((w, i) => ({ w, v: voices?.[i] })).filter((p): p is { w: number; v: VoiceLine } => !!p.v?.url);
-  if (!pool.length) return undefined;
-  let r = Math.random() * pool.reduce((s, p) => s + p.w, 0);
-  for (const p of pool) { r -= p.w; if (r <= 0) return p.v; }
-  return pool[pool.length - 1]!.v;
+type VoiceHolder = { voices?: (VoiceLine | undefined)[] | undefined; victoryVoice?: VoiceLine | undefined; voiceVersion?: number | undefined };
+
+/** Entry-open lines. Legacy entries stored 4 lines + victory in slot 5. */
+export function entryLines(e: VoiceHolder | undefined): VoiceLine[] {
+  if (!e?.voices) return [];
+  const list = e.voiceVersion === 2 ? e.voices : e.voices.slice(0, 4);
+  return list.filter((v): v is VoiceLine => !!v?.url);
+}
+export function victoryLine(e: VoiceHolder | undefined): VoiceLine | undefined {
+  if (!e) return undefined;
+  if (e.voiceVersion === 2) return e.victoryVoice?.url ? e.victoryVoice : undefined;
+  const v = e.voices?.[4];
+  return v?.url ? v : undefined;
+}
+
+/** Linear descending weights: line 1 most common. 4 lines → 40/30/20/10. */
+export function voicePercents(count: number): number[] {
+  const total = (count * (count + 1)) / 2;
+  return Array.from({ length: count }, (_, i) => Math.round(((count - i) / total) * 1000) / 10);
+}
+
+export function rollVoice(lines: VoiceLine[]): VoiceLine | undefined {
+  if (!lines.length) return undefined;
+  const w = lines.map((_, i) => lines.length - i);
+  let r = Math.random() * w.reduce((s, x) => s + x, 0);
+  for (let i = 0; i < lines.length; i++) { r -= w[i]!; if (r <= 0) return lines[i]; }
+  return lines[lines.length - 1];
 }
 
 export function playVoice(e: VoiceEvent) { window.dispatchEvent(new CustomEvent<VoiceEvent>(EVT, { detail: e })); }

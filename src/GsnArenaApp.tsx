@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { RichEntryEditor } from './RichEntryEditor';
-import { CommsBanner, MuteToggle, playVoice, rollVoice, VOICE_WEIGHTS, type VoiceLine } from './VoiceComms';
+import { CommsBanner, MuteToggle, playVoice, rollVoice, entryLines, victoryLine, voicePercents, type VoiceLine } from './VoiceComms';
 import { cleanEntryHtml, plainEntryText } from './lib/entry-content';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { getArt, getPendingArt, isGsnAdmin, setArtStatus, submitArtBatch, supabase, uploadArchiveImage, uploadArchiveFile, deleteMyArt, type Artwork, type ArtworkRating } from './lib/community';
@@ -32,6 +32,8 @@ type Entry = {
   notes?: ArchiveNote[];
   createdAt?: string;
   voices?: (VoiceLine | undefined)[];
+  victoryVoice?: VoiceLine | undefined;
+  voiceVersion?: number;
 };
 type LegalTerms = { content: string; updated_at?: string };
 type DatabaseState = Record<Category, Entry[]> & { settings?: { name: string; data: any }[] };
@@ -127,7 +129,8 @@ function AppContent() {
   const [artworks, setArtworks] = useState<Artwork[]>([]);
   const [terms, setTerms] = useState<LegalTerms>(() => { try { return JSON.parse(localStorage.getItem('gsnArenaTerms') || 'null') || defaultTerms; } catch { return defaultTerms; } });
   const [artRefresh, setArtRefresh] = useState(0);
-  const [imageTags, setImageTags] = useState<string[]>([]);
+  const [imageTags, setImageTags] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('gsnArenaTags') || '[]'); } catch { return []; } });
+  useEffect(() => { try { localStorage.setItem('gsnArenaTags', JSON.stringify(imageTags)); } catch {} }, [imageTags]);
   const removeImageTag = async (tag: string) => {
     const next = imageTags.filter((t) => t !== tag);
     setImageTags(next);
@@ -148,7 +151,8 @@ function AppContent() {
       setData(merged);
       const remoteTerms = (remote as DatabaseState).settings?.find((item) => item.name === 'terms')?.data;
       if (remoteTerms?.content) setTerms(remoteTerms);
-      const remoteTags = (remote as DatabaseState).settings?.find((item) => item.name === 'image_tags')?.data?.tags;
+      const remoteTagRow = (remote as DatabaseState).settings?.find((item) => item.name === 'image_tags') as any;
+      const remoteTags = remoteTagRow?.tags ?? remoteTagRow?.data?.tags;
       if (Array.isArray(remoteTags)) setImageTags(remoteTags);
       if (mode === 'editor' && supabase && !hasRemote) {
         try { await seedArchive(merged as unknown as Record<string, unknown[]>); } catch {}
@@ -190,6 +194,7 @@ function AppContent() {
     return () => window.clearTimeout(timer);
   }, [toast]);
   useEffect(() => setSidebarOpen(false), [location]);
+  useEffect(() => { document.body.style.overflow = sidebarOpen ? 'hidden' : ''; return () => { document.body.style.overflow = ''; }; }, [sidebarOpen]);
 
   const navigate = (path: string) => setLocation(path);
   const saveEntry = async (category: Category, entry: Entry, originalName?: string) => {
@@ -245,6 +250,7 @@ function AppContent() {
   return (
     <div className="app-shell">
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+        <button className="sidebar-close" type="button" aria-label="Close navigation" onClick={() => setSidebarOpen(false)}><X size={18} /></button>
         <div className="brand-block">
           <div className="brand-line">
             <img className="brand-logo" src="/gsn-logo.png" alt="GSN Arena" />
@@ -394,7 +400,7 @@ function Stat({ value, label }: { value: string | number; label: string }) {
 
 function CategoryPage({ category, data, openEntry }: { category: Category; data: DatabaseState; openEntry: (category: Category, name: string) => void }) {
   const [filter, setFilter] = useState('');
-  const entries = useMemo(() => data[category].filter((entry) => `${entry.name} ${entry.cls} ${plainEntryText(entry.summary)}`.toLowerCase().includes(filter.toLowerCase())), [category, data, filter]);
+  const entries = useMemo(() => data[category].filter((entry) => `${entry.name} ${entry.cls} ${plainEntryText(entry.summary)}`.toLowerCase().includes(filter.toLowerCase())).sort((a, b) => a.name.localeCompare(b.name)), [category, data, filter]);
   const meta = categoryMeta[category];
   return (
     <>
@@ -455,6 +461,12 @@ function ComparePage({ data }: { data: DatabaseState; openEntry: (category: Cate
     setPending(null);
     setRoll(Math.random());
   };
+  const winner = left && right && roll !== null ? (roll < .5 ? left : right) : undefined;
+  useEffect(() => {
+    if (picker) return;
+    const line = victoryLine(winner?.item);
+    if (winner && line) playVoice({ name: winner.item.name, image: winner.item.image, category: winner.category, line, victory: true });
+  }, [roll, winner?.item.name]);
 
   if (picker) return <div className="gsn-upgrade-compare">
     <button className="back-link" type="button" onClick={() => { setPicker(null); setPending(null); }}>← Return to comparison</button>
@@ -480,12 +492,7 @@ function ComparePage({ data }: { data: DatabaseState; openEntry: (category: Cate
     {record ? <><CombatantAvatar entry={record.item} category={record.category} size="big" /><strong>{record.item.name}</strong><small>{categoryMeta[record.category].label.toUpperCase()}</small></> : <div className="empty-state">AWAITING SUBJECT</div>}
     <button className="btn primary" type="button" onClick={() => { setPicker(side); setPending(selection[side]); }}>{record ? 'Change fighter' : 'Choose fighter'}</button>
   </div>;
-  const winner = left && right && roll !== null ? (roll < .5 ? left : right) : undefined;
   const loser = winner === left ? right : left;
-  useEffect(() => {
-    const line = winner?.item.voices?.[4];
-    if (winner && line?.url) playVoice({ name: winner.item.name, image: winner.item.image, category: winner.category, line, victory: true });
-  }, [roll, winner?.item.name]);
 
   return <div className="gsn-upgrade-compare">
     <div className="eyebrow compare-accent">Simulation chamber / 1v1 / for fun</div>
@@ -500,7 +507,7 @@ function ComparePage({ data }: { data: DatabaseState; openEntry: (category: Cate
 function DossierPage({ category, name, data, onBack, onEdit }: { category: Category; name: string; data: DatabaseState; onBack: () => void; onEdit?: ((entry: Entry) => void) | undefined }) {
   const entry = data[category].find((item) => item.name === name);
   useEffect(() => {
-    const line = rollVoice(entry?.voices);
+    const line = rollVoice(entryLines(entry));
     if (entry && line) playVoice({ name: entry.name, image: entry.image, category, line });
   }, [category, name]);
   if (!entry) return <NotFound navigate={onBack} />;
@@ -543,17 +550,16 @@ function ImagePickButton({ onUrl }: { onUrl: (url: string) => void }) {
     {err && <span className="form-error">{err}</span>}</label>;
 }
 
-function VoiceSlot({ index, value, onChange }: { index: number; value: VoiceLine | undefined; onChange: (v: VoiceLine | undefined) => void }) {
+function VoiceSlot({ label, value, onChange }: { label: string; value: VoiceLine | undefined; onChange: (v: VoiceLine | undefined) => void }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [playing, setPlaying] = useState<HTMLAudioElement | null>(null);
-  const label = index === 4 ? 'Audio 5 · Victory (100% on win)' : `Audio ${index + 1} · ${VOICE_WEIGHTS[index]}% chance`;
   const preview = () => { if (playing) { playing.pause(); setPlaying(null); return; } if (!value?.url) return; const a = new Audio(value.url); a.onended = () => setPlaying(null); void a.play(); setPlaying(a); };
   return <div className="voice-slot"><div className="voice-slot-label">{label}</div>
     <div className="voice-slot-row">
       <label className="btn ghost mini pick-btn">{busy ? 'Uploading…' : <><Upload size={12} /> {value?.url ? 'Replace audio' : 'Choose audio'}</>}<input type="file" accept="audio/*" hidden disabled={busy} onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; if (f.size > 10 * 1024 * 1024) { setErr('Keep audio under 10 MB.'); return; } setBusy(true); setErr(''); try { onChange({ url: await uploadArchiveFile(f), text: value?.text || '' }); } catch (x) { setErr(x instanceof Error ? x.message : 'Upload failed'); } finally { setBusy(false); } }} /></label>
       {value?.url && <button type="button" className="btn ghost mini" onClick={preview}>{playing ? 'Stop' : 'Play'}</button>}
-      {value?.url && <button type="button" className="btn ghost mini" onClick={() => onChange(undefined)}><X size={12} /> Remove</button>}
+      <button type="button" className="btn ghost mini" onClick={() => onChange(undefined)}><X size={12} /> Remove</button>
     </div>
     <input className="text-input" value={value?.text || ''} disabled={!value?.url} placeholder={value?.url ? 'Line text shown in the notification' : 'Upload audio first'} onChange={(e) => value && onChange({ ...value, text: e.target.value })} />
     {err && <span className="form-error">{err}</span>}
@@ -575,11 +581,14 @@ function EditorModal({ initial, category, onClose, onSave }: { initial?: Entry |
   const [documentField, setDocumentField] = useState<'summary' | 'hypothetical' | null>(null);
   const [saveError, setSaveError] = useState('');
   const setField = (key: keyof Entry, value: any) => setForm((previous) => ({ ...previous, [key]: value }));
+  const [lines, setLinesState] = useState<(VoiceLine | undefined)[]>(() => entryLines(initial));
+  const percents = voicePercents(lines.length);
+  const setLines = (next: (VoiceLine | undefined)[]) => { setLinesState(next); setForm((p) => ({ ...p, voices: next.filter((x): x is VoiceLine => !!x?.url), victoryVoice: victoryLine(p), voiceVersion: 2 })); };
   const addNote = () => setField('notes', [...(form.notes || []), { marker: '○', author: 'Community', text: '' }]);
   const updateNote = (index: number, patch: Partial<ArchiveNote>) => setField('notes', (form.notes || []).map((n, i) => i === index ? { ...n, ...patch } : n));
   const submit = (event: React.FormEvent) => { event.preventDefault(); if (!form.name.trim() || !form.cls.trim() || !plainEntryText(form.summary)) { setSaveError('Name, classification and actual summary are required.'); return; } onSave(category, { ...form, name: form.name.trim(), cls: form.cls.trim(), summary: form.summary.trim() }, initial?.name); };
   if (documentField) return <RichEntryEditor key={documentField} title={`${form.name || 'New dossier'} / ${documentField === 'summary' ? 'Actual summary' : 'Hypothetical summary'}`} value={form[documentField] || ''} onBack={() => setDocumentField(null)} onSave={(html) => { setField(documentField, html); setDocumentField(null); }} />;
-  return <form className="dossier-edit-screen" onSubmit={submit}><div className="modal-head edit-screen-head"><button className="btn ghost" type="button" aria-label="Back to entry" onClick={onClose}><ArrowLeft size={17} /> Back</button><div><span className="eyebrow">Archive / dossier editor</span><h2>{isEditing ? `Edit ${form.name}` : 'New dossier'}</h2></div><button className="btn primary" type="submit"><Database size={14}/> Save file</button></div><div className="modal-body"><div className="edit-section-label">Identity and classification</div><div className="form-grid">
+  return <form className="dossier-edit-screen" onSubmit={submit}><button className="back-link" type="button" onClick={onClose}><ArrowLeft size={14} /> Return to {isEditing ? form.name || 'entry' : 'archive'}</button><div className="edit-screen-head"><div><span className="eyebrow">Archive / dossier editor / {categoryMeta[category].label}</span><h1 className="display-title">{isEditing ? <>Edit <em>{form.name}</em></> : <>New <em>dossier</em></>}</h1></div><button className="btn primary" type="submit"><Database size={14}/> Save file</button></div><div className="edit-screen-body"><div className="edit-section-label">Identity and classification</div><div className="form-grid">
     <div className="field"><label>Name</label><input className="text-input" value={form.name} onChange={e => setField('name', e.target.value)} required /></div>
     <div className="field"><label>Classification</label><input className="text-input" value={form.cls} onChange={e => setField('cls', e.target.value)} required /></div>
     <div className="field"><label>File marker</label><input className="text-input" value={form.tag} onChange={e => setField('tag', e.target.value)} /></div>
@@ -590,10 +599,12 @@ function EditorModal({ initial, category, onClose, onSave }: { initial?: Entry |
     <div className="field"><label>Durability</label><input className="text-input" value={form.durability} onChange={e => setField('durability', e.target.value)} /></div>
     <div className="field full summary-field"><label>Hypothetical summary</label><button className="document-launch" type="button" onClick={() => setDocumentField('hypothetical')}><span className="document-launch-icon"><FileText size={20} /></span><span><strong>Open hypothetical editor</strong><small>{plainEntryText(form.hypothetical || '').slice(0, 110) || 'No hypothesis written yet'}</small></span><Pencil size={16}/></button></div>
     <div className="field full"><label>Primary profile image</label><div className="image-pick-row">{form.image ? <img className="image-thumb" src={form.image} alt="" /> : null}<ImagePickButton onUrl={(url) => setField('image', url)} />{form.image ? <button type="button" className="btn ghost mini" onClick={() => setField('image', '')}><X size={12}/> Remove</button> : null}</div></div>
-    <div className="field full"><div className="edit-section-label">Voice lines</div><div className="note-guide">Lines 1–4 play when someone opens this entry (chances shown; empty slots are skipped). Line 5 plays when this character wins in Compare.</div>
-      {[0, 1, 2, 3, 4].map((i) => <VoiceSlot key={i} index={i} value={form.voices?.[i]} onChange={(v) => { const next = [...(form.voices || [])]; while (next.length < 5) next.push(undefined); next[i] = v; setField('voices', next); }} />)}</div>
+    <div className="field full"><div className="edit-section-label">Voice lines</div><div className="note-guide">Add as many lines as you like. One plays when someone opens this entry — line 1 is the most common and the chances adjust automatically. The victory line plays when this character wins in Compare.</div>
+      {lines.map((line, i) => <VoiceSlot key={i} label={`Line ${i + 1} · ${percents[i]}% chance`} value={line} onChange={(v) => setLines(v ? lines.map((x, j) => j === i ? v : x) : lines.filter((_, j) => j !== i))} />)}
+      <button type="button" className="btn ghost" onClick={() => setLines([...lines, undefined])}><Plus size={13}/> Add voice line</button>
+      <VoiceSlot label="Victory line · plays on Compare win" value={victoryLine(form)} onChange={(v) => setForm((p) => ({ ...p, voices: lines.filter((x): x is VoiceLine => !!x?.url), victoryVoice: v, voiceVersion: 2 }))} /></div>
     <div className="field full"><div className="editor-section-head"><label>Notes</label><button type="button" className="btn ghost" onClick={addNote}><Plus size={13}/> Add note</button></div><div className="note-guide">Seth marker: ♤ · Community markers: ○ ● □ ♡ ◇ ♧ ☆ ¤</div>{(form.notes || []).map((note, index) => <div className="editor-subrow note-row" key={index}><select className="select-input note-marker-select" value={note.marker} onChange={e => updateNote(index,{marker:e.target.value as NoteMarker})}>{noteMarkers.map(m=><option key={m}>{m}</option>)}</select><input className="text-input" value={note.author} onChange={e => updateNote(index,{author:e.target.value})} placeholder="Author" /><textarea className="text-area" value={note.text} onChange={e => updateNote(index,{text:e.target.value})} placeholder="Note text. Use *Term* for references." /></div>)}</div>
-  </div>{saveError && <div className="form-error" role="alert">{saveError}</div>}</div><div className="modal-foot edit-screen-foot"><span>Changes are published when you save.</span><div><button className="btn ghost" type="button" onClick={onClose}>Cancel</button><button className="btn primary" type="submit"><Database size={14}/> Save to archive</button></div></div></form>;
+  </div>{saveError && <div className="form-error" role="alert">{saveError}</div>}</div><div className="edit-screen-foot"><span>Changes are published when you save.</span><div><button className="btn ghost" type="button" onClick={onClose}>Cancel</button><button className="btn primary" type="submit"><Database size={14}/> Save to archive</button></div></div></form>;
 }
 
 function EntryBody({ text, data }: { text: string; data: DatabaseState }) {

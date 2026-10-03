@@ -490,3 +490,28 @@ a { color: inherit; text-decoration: none; }
 @media(prefers-reduced-motion:reduce){.comms-banner,.nav-item::after,.comms-wave i{animation:none}}
 .topbar .search-trigger{margin-left:auto}.topbar .mute-toggle{margin-left:0}.mobile-topbar .mute-toggle{margin-left:0}
 .art-grid>.empty-state{grid-column:1/-1}
+
+/* Sidebar scrolls on its own; page stays still */
+.sidebar { overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.sidebar-close { display: none; }
+@media (max-width: 720px) {
+  .sidebar-close { display: grid; place-items: center; position: absolute; top: 14px; right: 14px; width: 34px; height: 34px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; z-index: 2; }
+}
+
+/* Tactical return buttons */
+.back-link { position: relative; padding: 9px 16px 9px 12px; border: 1px solid var(--line-bright); background: linear-gradient(100deg, var(--surface-2), var(--surface)); color: var(--muted); text-transform: uppercase; letter-spacing: .12em; clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px); transition: color .2s, border-color .2s, transform .12s, box-shadow .2s; }
+.back-link::before { content: "["; color: var(--red-bright); margin-right: 2px; }
+.back-link::after { content: "]"; color: var(--red-bright); margin-left: 2px; }
+.back-link:hover { color: var(--ink); border-color: var(--red-bright); box-shadow: 0 0 18px color-mix(in srgb, var(--red) 35%, transparent); }
+.back-link:active { transform: translateY(1px) scale(.98); }
+
+/* Editor as a real page section, not a pop-up */
+.dossier-edit-screen { max-width: none; margin: 0; border: 0; background: transparent; box-shadow: none; }
+.dossier-edit-screen .edit-screen-head { position: static; display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 0 0 22px; margin-bottom: 26px; border-bottom: 1px solid var(--line); background: none; backdrop-filter: none; }
+.dossier-edit-screen .edit-screen-head h1 { margin: 0; white-space: normal; overflow-wrap: anywhere; }
+.edit-screen-body { padding: 0; }
+.dossier-edit-screen .edit-screen-foot { display: flex; padding: 14px 0; margin-top: 26px; border-top: 1px solid var(--line); }
+@media (max-width: 720px) {
+  .dossier-edit-screen .edit-screen-head { flex-direction: column; align-items: stretch; }
+  .dossier-edit-screen .edit-screen-foot { flex-direction: column; align-items: stretch; gap: 10px; }
+}
