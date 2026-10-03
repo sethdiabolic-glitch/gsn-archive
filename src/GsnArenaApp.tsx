@@ -500,7 +500,7 @@ function ComparePage({ data }: { data: DatabaseState; openEntry: (category: Cate
 function DossierPage({ category, name, data, onBack, onEdit }: { category: Category; name: string; data: DatabaseState; onBack: () => void; onEdit?: ((entry: Entry) => void) | undefined }) {
   const entry = data[category].find((item) => item.name === name);
   useEffect(() => {
-    const line = rollVoice(entry?.voices);
+    const line = rollVoice(entryLines(entry));
     if (entry && line) playVoice({ name: entry.name, image: entry.image, category, line });
   }, [category, name]);
   if (!entry) return <NotFound navigate={onBack} />;
@@ -543,17 +543,16 @@ function ImagePickButton({ onUrl }: { onUrl: (url: string) => void }) {
     {err && <span className="form-error">{err}</span>}</label>;
 }
 
-function VoiceSlot({ index, value, onChange }: { index: number; value: VoiceLine | undefined; onChange: (v: VoiceLine | undefined) => void }) {
+function VoiceSlot({ label, value, onChange }: { label: string; value: VoiceLine | undefined; onChange: (v: VoiceLine | undefined) => void }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [playing, setPlaying] = useState<HTMLAudioElement | null>(null);
-  const label = index === 4 ? 'Audio 5 · Victory (100% on win)' : `Audio ${index + 1} · ${VOICE_WEIGHTS[index]}% chance`;
   const preview = () => { if (playing) { playing.pause(); setPlaying(null); return; } if (!value?.url) return; const a = new Audio(value.url); a.onended = () => setPlaying(null); void a.play(); setPlaying(a); };
   return <div className="voice-slot"><div className="voice-slot-label">{label}</div>
     <div className="voice-slot-row">
       <label className="btn ghost mini pick-btn">{busy ? 'Uploading…' : <><Upload size={12} /> {value?.url ? 'Replace audio' : 'Choose audio'}</>}<input type="file" accept="audio/*" hidden disabled={busy} onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; if (f.size > 10 * 1024 * 1024) { setErr('Keep audio under 10 MB.'); return; } setBusy(true); setErr(''); try { onChange({ url: await uploadArchiveFile(f), text: value?.text || '' }); } catch (x) { setErr(x instanceof Error ? x.message : 'Upload failed'); } finally { setBusy(false); } }} /></label>
       {value?.url && <button type="button" className="btn ghost mini" onClick={preview}>{playing ? 'Stop' : 'Play'}</button>}
-      {value?.url && <button type="button" className="btn ghost mini" onClick={() => onChange(undefined)}><X size={12} /> Remove</button>}
+      <button type="button" className="btn ghost mini" onClick={() => onChange(undefined)}><X size={12} /> Remove</button>
     </div>
     <input className="text-input" value={value?.text || ''} disabled={!value?.url} placeholder={value?.url ? 'Line text shown in the notification' : 'Upload audio first'} onChange={(e) => value && onChange({ ...value, text: e.target.value })} />
     {err && <span className="form-error">{err}</span>}
@@ -575,6 +574,9 @@ function EditorModal({ initial, category, onClose, onSave }: { initial?: Entry |
   const [documentField, setDocumentField] = useState<'summary' | 'hypothetical' | null>(null);
   const [saveError, setSaveError] = useState('');
   const setField = (key: keyof Entry, value: any) => setForm((previous) => ({ ...previous, [key]: value }));
+  const [lines, setLinesState] = useState<(VoiceLine | undefined)[]>(() => entryLines(initial));
+  const percents = voicePercents(lines.length);
+  const setLines = (next: (VoiceLine | undefined)[]) => { setLinesState(next); setForm((p) => ({ ...p, voices: next.filter((x): x is VoiceLine => !!x?.url), victoryVoice: victoryLine(p), voiceVersion: 2 })); };
   const addNote = () => setField('notes', [...(form.notes || []), { marker: '○', author: 'Community', text: '' }]);
   const updateNote = (index: number, patch: Partial<ArchiveNote>) => setField('notes', (form.notes || []).map((n, i) => i === index ? { ...n, ...patch } : n));
   const submit = (event: React.FormEvent) => { event.preventDefault(); if (!form.name.trim() || !form.cls.trim() || !plainEntryText(form.summary)) { setSaveError('Name, classification and actual summary are required.'); return; } onSave(category, { ...form, name: form.name.trim(), cls: form.cls.trim(), summary: form.summary.trim() }, initial?.name); };
