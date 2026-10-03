@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { RichEntryEditor } from './RichEntryEditor';
-import { CommsBanner, MuteToggle, playVoice, rollVoice, VOICE_WEIGHTS, type VoiceLine } from './VoiceComms';
+import { CommsBanner, MuteToggle, playVoice, rollVoice, entryLines, victoryLine, voicePercents, type VoiceLine } from './VoiceComms';
 import { cleanEntryHtml, plainEntryText } from './lib/entry-content';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { getArt, getPendingArt, isGsnAdmin, setArtStatus, submitArtBatch, supabase, uploadArchiveImage, uploadArchiveFile, deleteMyArt, type Artwork, type ArtworkRating } from './lib/community';
@@ -32,6 +32,8 @@ type Entry = {
   notes?: ArchiveNote[];
   createdAt?: string;
   voices?: (VoiceLine | undefined)[];
+  victoryVoice?: VoiceLine | undefined;
+  voiceVersion?: number;
 };
 type LegalTerms = { content: string; updated_at?: string };
 type DatabaseState = Record<Category, Entry[]> & { settings?: { name: string; data: any }[] };
@@ -127,7 +129,8 @@ function AppContent() {
   const [artworks, setArtworks] = useState<Artwork[]>([]);
   const [terms, setTerms] = useState<LegalTerms>(() => { try { return JSON.parse(localStorage.getItem('gsnArenaTerms') || 'null') || defaultTerms; } catch { return defaultTerms; } });
   const [artRefresh, setArtRefresh] = useState(0);
-  const [imageTags, setImageTags] = useState<string[]>([]);
+  const [imageTags, setImageTags] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('gsnArenaTags') || '[]'); } catch { return []; } });
+  useEffect(() => { try { localStorage.setItem('gsnArenaTags', JSON.stringify(imageTags)); } catch {} }, [imageTags]);
   const removeImageTag = async (tag: string) => {
     const next = imageTags.filter((t) => t !== tag);
     setImageTags(next);
@@ -148,7 +151,8 @@ function AppContent() {
       setData(merged);
       const remoteTerms = (remote as DatabaseState).settings?.find((item) => item.name === 'terms')?.data;
       if (remoteTerms?.content) setTerms(remoteTerms);
-      const remoteTags = (remote as DatabaseState).settings?.find((item) => item.name === 'image_tags')?.data?.tags;
+      const remoteTagRow = (remote as DatabaseState).settings?.find((item) => item.name === 'image_tags') as any;
+      const remoteTags = remoteTagRow?.tags ?? remoteTagRow?.data?.tags;
       if (Array.isArray(remoteTags)) setImageTags(remoteTags);
       if (mode === 'editor' && supabase && !hasRemote) {
         try { await seedArchive(merged as unknown as Record<string, unknown[]>); } catch {}
@@ -190,6 +194,7 @@ function AppContent() {
     return () => window.clearTimeout(timer);
   }, [toast]);
   useEffect(() => setSidebarOpen(false), [location]);
+  useEffect(() => { document.body.style.overflow = sidebarOpen ? 'hidden' : ''; return () => { document.body.style.overflow = ''; }; }, [sidebarOpen]);
 
   const navigate = (path: string) => setLocation(path);
   const saveEntry = async (category: Category, entry: Entry, originalName?: string) => {
@@ -245,6 +250,7 @@ function AppContent() {
   return (
     <div className="app-shell">
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+        <button className="sidebar-close" type="button" aria-label="Close navigation" onClick={() => setSidebarOpen(false)}><X size={18} /></button>
         <div className="brand-block">
           <div className="brand-line">
             <img className="brand-logo" src="/gsn-logo.png" alt="GSN Arena" />
