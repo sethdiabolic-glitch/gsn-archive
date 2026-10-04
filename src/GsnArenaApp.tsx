@@ -377,7 +377,7 @@ function HomePage({ data, navigate, openEntry }: { data: DatabaseState; navigate
         <Stat value={categories.length} label="Archive sectors" />
         <Stat value="v19.04" label="Current index" />
       </div>
-      <div className="section-head"><div><div className="eyebrow">Select a sector</div><h2>Archive sectors</h2></div><p>06 active channels</p></div>
+      <div className="section-head"><div><div className="eyebrow">Select a sector</div><h2>Archive sectors</h2></div><p>{String(categories.length).padStart(2, '0')} active channels</p></div>
       <div className="archive-grid">
         {categories.map((category, index) => {
           const meta = categoryMeta[category];
@@ -624,7 +624,7 @@ function EditorModal({ initial, category, onClose, onSave }: { initial?: Entry |
     <div className="field full"><div className="edit-section-label">Voice lines</div><div className="note-guide">Add as many lines as you like. One plays when someone opens this entry — line 1 is the most common and the chances adjust automatically. The victory line plays when this character wins in Compare.</div>
       {lines.map((line, i) => <VoiceSlot key={i} label={`Line ${i + 1} · ${percents[i]}% chance`} value={line} onChange={(v) => setLines(v ? lines.map((x, j) => j === i ? v : x) : lines.filter((_, j) => j !== i))} />)}
       <button type="button" className="btn ghost" onClick={() => setLines([...lines, undefined])}><Plus size={13}/> Add voice line</button>
-      {!isTheory(category) && <VoiceSlot label="Victory line · plays on Compare win" value={victoryLine(form)} onChange={(v) => setForm((p) => ({ ...p, voices: lines.filter((x): x is VoiceLine => !!x?.url), victoryVoice: v, voiceVersion: 2 }))} /></div>
+      {!isTheory(category) && <VoiceSlot label="Victory line · plays on Compare win" value={victoryLine(form)} onChange={(v) => setForm((p) => ({ ...p, voices: lines.filter((x): x is VoiceLine => !!x?.url), victoryVoice: v, voiceVersion: 2 }))} />}</div>
     <div className="field full"><div className="editor-section-head"><label>Notes</label><button type="button" className="btn ghost" onClick={addNote}><Plus size={13}/> Add note</button></div><div className="note-guide">Seth marker: ♤ · Community markers: ○ ● □ ♡ ◇ ♧ ☆ ¤</div>{(form.notes || []).map((note, index) => <div className="editor-subrow note-row" key={index}><select className="select-input note-marker-select" value={note.marker} onChange={e => updateNote(index,{marker:e.target.value as NoteMarker})}>{noteMarkers.map(m=><option key={m}>{m}</option>)}</select><input className="text-input" value={note.author} onChange={e => updateNote(index,{author:e.target.value})} placeholder="Author" /><textarea className="text-area" value={note.text} onChange={e => updateNote(index,{text:e.target.value})} placeholder="Note text. Use *Term* for references." /></div>)}</div>
   </div>{saveError && <div className="form-error" role="alert">{saveError}</div>}</div><div className="edit-screen-foot"><span>Changes are published when you save.</span><div><button className="btn ghost" type="button" onClick={onClose}>Cancel</button><button className="btn primary" type="submit"><Database size={14}/> Save to archive</button></div></div></form>;
 }
