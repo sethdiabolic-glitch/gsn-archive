@@ -383,7 +383,7 @@ function HomePage({ data, navigate, openEntry }: { data: DatabaseState; navigate
           const meta = categoryMeta[category];
           return <button className="archive-card" key={category} type="button" data-index={`0${index + 1}`} style={{ '--card-color': meta.color } as React.CSSProperties} onClick={() => navigate(`/${category}`)} data-testid={`card-sector-${category}`}>
             <div className="archive-card-top"><span className="archive-icon">{iconFor(category)}</span><span className="archive-count">{String(data[category].length).padStart(2, '0')}</span></div>
-            <div><div className="archive-name">{meta.label}</div><div className="archive-meta">{category === 'appendix' ? 'Terms & references' : 'Dossier records'} <ChevronRight size={12} style={{ verticalAlign: 'middle' }} /></div></div>
+            <div><div className="archive-name">{meta.label}</div><div className="archive-meta">{category === 'appendix' ? 'Terms & references' : isTheory(category) ? 'Lore investigations' : 'Dossier records'} <ChevronRight size={12} style={{ verticalAlign: 'middle' }} /></div></div>
           </button>;
         })}
       </div>
@@ -427,7 +427,7 @@ function CategoryPage({ category, data, openEntry }: { category: Category; data:
     <>
       <div className="eyebrow" style={{ color: meta.color }}>Archive sector / {meta.label}</div>
       <h1 className="display-title">{meta.label}</h1>
-      <p className="lede">{category === 'appendix' ? 'Reference terms used throughout the archive. Select a term to inspect its working definition.' : `Field dossiers and calculated feats filed under the ${meta.label.toLowerCase()} channel.`}</p>
+      <p className="lede">{isTheory(category) ? 'Theories and speculation surrounding the world of Goddess of Victory. Open a file to read the full investigation.' : category === 'appendix' ? 'Reference terms used throughout the archive. Select a term to inspect its working definition.' : `Field dossiers and calculated feats filed under the ${meta.label.toLowerCase()} channel.`}</p>
       <div className="toolbar"><div className="input-wrap"><Search size={15} /><input className="text-input" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder={`Filter ${meta.label.toLowerCase()}...`} aria-label={`Filter ${meta.label}`} data-testid={`input-filter-${category}`} /></div><span style={{ color: 'var(--muted)', font: '11px var(--font-mono)' }}>{entries.length} / {data[category].length} records</span></div>
       {entries.length ? <div className="entry-grid">{entries.map((entry) => <EntryCard key={entry.name} category={category} entry={entry} color={meta.color} openEntry={openEntry} />)}</div> : <EmptyState text="No records match this filter." />}
     </>
@@ -437,7 +437,7 @@ function CategoryPage({ category, data, openEntry }: { category: Category; data:
 function EntryCard({ category, entry, color, openEntry }: { category: Category; entry: Entry; color: string; openEntry: (category: Category, name: string) => void }) {
   return <button className="entry-card" type="button" style={{ '--entry-color': color } as React.CSSProperties} onClick={() => openEntry(category, entry.name)} data-testid={`card-entry-${entry.name.replaceAll(' ', '-').toLowerCase()}`}>
     <div><div className="entry-card-header"><span className="entry-tag">{entry.tag}</span><span className="entry-code">{entry.tier || 'UNRATED'}</span></div><div className="entry-name-row">{entry.image ? <div className="entry-avatar category-glow" style={{ '--profile-glow': `var(--category-${category})` } as React.CSSProperties}><img src={entry.image} alt="" /></div> : null}<div className="entry-name">{entry.name}</div></div><div className="entry-class">{entry.cls}</div><p className="entry-summary">{plainEntryText(entry.summary)}</p></div>
-    <div className="entry-foot"><span>{category === 'appendix' ? 'REFERENCE TERM' : entry.speed !== 'N/A' ? 'FEAT DATA AVAILABLE' : 'PARTIAL RECORD'}</span><span className="entry-arrow"><ArrowRight size={15} /></span></div>
+    <div className="entry-foot"><span>{category === 'appendix' ? 'REFERENCE TERM' : isTheory(category) ? 'THEORY FILE' : entry.speed !== 'N/A' ? 'FEAT DATA AVAILABLE' : 'PARTIAL RECORD'}</span><span className="entry-arrow"><ArrowRight size={15} /></span></div>
   </button>;
 }
 
@@ -624,7 +624,7 @@ function EditorModal({ initial, category, onClose, onSave }: { initial?: Entry |
     <div className="field full"><div className="edit-section-label">Voice lines</div><div className="note-guide">Add as many lines as you like. One plays when someone opens this entry — line 1 is the most common and the chances adjust automatically. The victory line plays when this character wins in Compare.</div>
       {lines.map((line, i) => <VoiceSlot key={i} label={`Line ${i + 1} · ${percents[i]}% chance`} value={line} onChange={(v) => setLines(v ? lines.map((x, j) => j === i ? v : x) : lines.filter((_, j) => j !== i))} />)}
       <button type="button" className="btn ghost" onClick={() => setLines([...lines, undefined])}><Plus size={13}/> Add voice line</button>
-      <VoiceSlot label="Victory line · plays on Compare win" value={victoryLine(form)} onChange={(v) => setForm((p) => ({ ...p, voices: lines.filter((x): x is VoiceLine => !!x?.url), victoryVoice: v, voiceVersion: 2 }))} /></div>
+      {!isTheory(category) && <VoiceSlot label="Victory line · plays on Compare win" value={victoryLine(form)} onChange={(v) => setForm((p) => ({ ...p, voices: lines.filter((x): x is VoiceLine => !!x?.url), victoryVoice: v, voiceVersion: 2 }))} /></div>
     <div className="field full"><div className="editor-section-head"><label>Notes</label><button type="button" className="btn ghost" onClick={addNote}><Plus size={13}/> Add note</button></div><div className="note-guide">Seth marker: ♤ · Community markers: ○ ● □ ♡ ◇ ♧ ☆ ¤</div>{(form.notes || []).map((note, index) => <div className="editor-subrow note-row" key={index}><select className="select-input note-marker-select" value={note.marker} onChange={e => updateNote(index,{marker:e.target.value as NoteMarker})}>{noteMarkers.map(m=><option key={m}>{m}</option>)}</select><input className="text-input" value={note.author} onChange={e => updateNote(index,{author:e.target.value})} placeholder="Author" /><textarea className="text-area" value={note.text} onChange={e => updateNote(index,{text:e.target.value})} placeholder="Note text. Use *Term* for references." /></div>)}</div>
   </div>{saveError && <div className="form-error" role="alert">{saveError}</div>}</div><div className="edit-screen-foot"><span>Changes are published when you save.</span><div><button className="btn ghost" type="button" onClick={onClose}>Cancel</button><button className="btn primary" type="submit"><Database size={14}/> Save to archive</button></div></div></form>;
 }
