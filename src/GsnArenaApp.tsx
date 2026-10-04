@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useState } from 'react';
 import { RichEntryEditor } from './RichEntryEditor';
 import { CommsBanner, MuteToggle, playVoice, rollVoice, entryLines, victoryLine, voicePercents, type VoiceLine } from './VoiceComms';
@@ -8,10 +9,10 @@ import { deleteArchiveEntry, loadArchive, saveArchiveEntry, seedArchive } from '
 import {
   Archive, ArrowLeft, ArrowRight, BookOpen, ChevronRight, CircleDot, Database,
   FileText, FolderArchive, Gauge, GitCompare, Layers3, Menu, Pencil, Plus,
-  Radar, ScanSearch, Search, Shield, Swords, Trash2, X, Image, Upload, Check, Ban, AlertTriangle, LogIn,
+  Radar, ScanSearch, Lightbulb, Search, Shield, Swords, Trash2, X, Image, Upload, Check, Ban, AlertTriangle, LogIn,
 } from 'lucide-react';
 
-type Category = 'characters' | 'heretics' | 'raptures' | 'infra' | 'weapons' | 'appendix';
+type Category = 'characters' | 'heretics' | 'raptures' | 'infra' | 'weapons' | 'theories' | 'appendix';
 type Tier = 'EX' | 'S' | 'A' | 'B' | 'C' | 'D' | 'Undefined';
 type NoteMarker = '♤' | '○' | '●' | '□' | '♡' | '◇' | '♧' | '☆' | '¤';
 type ArchiveNote = { marker: NoteMarker; author: string; text: string };
@@ -44,9 +45,11 @@ const categoryMeta: Record<Category, { label: string; color: string; icon: typeo
   raptures: { label: 'Raptures', color: '#57c29b', icon: CircleDot },
   infra: { label: 'Structures', color: '#65a7d8', icon: Layers3 },
   weapons: { label: 'Weapons', color: '#d4b86a', icon: Swords },
+  theories: { label: 'Theories', color: '#e0a64e', icon: Lightbulb },
   appendix: { label: 'Appendix', color: '#9299a4', icon: BookOpen },
 };
 const categories = Object.keys(categoryMeta) as Category[];
+const isTheory = (c: Category) => c === 'theories';
 const tiers: Tier[] = ['EX', 'S', 'A', 'B', 'C', 'D', 'Undefined'];
 const noteMarkers: NoteMarker[] = ['♤', '○', '●', '□', '♡', '◇', '♧', '☆', '¤'];
 const defaultTerms: LegalTerms = { content: 'These Terms of Use are maintained by GSN Arena. Replace this text with the current legal terms approved for publication.', updated_at: new Date().toISOString() };
@@ -84,6 +87,7 @@ const defaultData: DatabaseState = {
     { name: 'The Ark', cls: 'Habitable Structure', tag: 'REF', summary: '10,000 km² of mechanical infrastructure, functionally the size of an advanced city. Every block, street and corner under near-total surveillance.', speed: 'N/A', strength: 'N/A', durability: '10,000 km² surface area', tier: 'A' },
   ],
   weapons: [],
+  theories: [],
   appendix: [
     { name: 'Goddessium', cls: 'Material', tag: 'GLOSSARY', summary: 'The titanium-derived material composing Nikke bodies. Density ~4,500 kg/m³, several times stronger than titanium, with properties that behave more biological than purely mechanical.', speed: 'N/A', strength: 'N/A', durability: 'N/A' },
     { name: 'Raptium', cls: 'Material', tag: 'GLOSSARY', summary: 'The material composing Rapture bodies. Structurally related to Goddessium, but not identical — origin still under speculation.', speed: 'N/A', strength: 'N/A', durability: 'N/A' },
@@ -367,31 +371,49 @@ function HomePage({ data, navigate, openEntry }: { data: DatabaseState; navigate
         </div>
         <div className="hero-visual"><img className="hero-logo" src="/gsn-logo.png" alt="GSN Arena insignia" /><span className="hero-stamp">CLASSIFIED / COMMUNITY RECORD</span></div>
       </section>
+      <CuboidTicker navigate={navigate} />
       <div className="stats-grid">
         <Stat value={total} label="Filed entries" />
         <Stat value={scored} label="Tier-assessed" />
         <Stat value={categories.length} label="Archive sectors" />
         <Stat value="v19.04" label="Current index" />
       </div>
-      <div className="section-head"><div><div className="eyebrow">Select a sector</div><h2>Archive sectors</h2></div><p>06 active channels</p></div>
+      <div className="section-head"><div><div className="eyebrow">Select a sector</div><h2>Archive sectors</h2></div><p>{String(categories.length).padStart(2, '0')} active channels</p></div>
       <div className="archive-grid">
         {categories.map((category, index) => {
           const meta = categoryMeta[category];
           return <button className="archive-card" key={category} type="button" data-index={`0${index + 1}`} style={{ '--card-color': meta.color } as React.CSSProperties} onClick={() => navigate(`/${category}`)} data-testid={`card-sector-${category}`}>
             <div className="archive-card-top"><span className="archive-icon">{iconFor(category)}</span><span className="archive-count">{String(data[category].length).padStart(2, '0')}</span></div>
-            <div><div className="archive-name">{meta.label}</div><div className="archive-meta">{category === 'appendix' ? 'Terms & references' : 'Dossier records'} <ChevronRight size={12} style={{ verticalAlign: 'middle' }} /></div></div>
+            <div><div className="archive-name">{meta.label}</div><div className="archive-meta">{category === 'appendix' ? 'Terms & references' : isTheory(category) ? 'Lore investigations' : 'Dossier records'} <ChevronRight size={12} style={{ verticalAlign: 'middle' }} /></div></div>
           </button>;
         })}
       </div>
-      <div className="section-head"><div><div className="eyebrow">Operational doctrine</div><h2>How the files read</h2></div></div>
-      <div className="doctrine-grid">
-        {[
-          ['01', 'Numbers have context', 'A feat is more than a stat line. Read the surrounding conditions before scaling it.'],
-          ['02', 'Undefined is honest', 'An empty tier means the file needs more evidence — not that the subject is weak.'],
-        ].map(([number, title, copy]) => <div className="stat-box" key={number}><div style={{ color: 'var(--red-bright)', font: '11px var(--font-mono)' }}>{number}</div><div style={{ marginTop: 15, font: '700 20px var(--font-display)', textTransform: 'uppercase' }}>{title}</div><div style={{ marginTop: 8, color: 'var(--muted)', fontSize: 12, lineHeight: 1.6 }}>{copy}</div></div>)}
-      </div>
     </>
   );
+}
+
+const tickerItems: [string, string, string][] = [
+  ['🌌', 'Explore the world beyond the battlefield', '/infra'],
+  ['📖', 'Read dossiers on your favorite Nikkes', '/characters'],
+  ['⚔️', 'Explore what your Units can really do', '/compare'],
+  ['🧩', 'Dig deep into theories surrounding the world of Goddess of Victory', '/theories'],
+  ['🎨', 'Browse art from across the Nikke universe', '/community'],
+];
+function CuboidTicker({ navigate }: { navigate: (path: string) => void }) {
+  const [step, setStep] = useState(0);
+  const [paused, setPaused] = useState(false);
+  useEffect(() => { if (paused) return; const t = window.setInterval(() => setStep((v) => v + 1), 3200); return () => window.clearInterval(t); }, [paused]);
+  const n = tickerItems.length;
+  const current = tickerItems[((step % n) + n) % n]!;
+  return <div className="cuboid" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
+    <div className="cuboid-label">ARK // DIRECTIVES</div>
+    <button type="button" className="cuboid-stage" onClick={() => navigate(current[2])} aria-label={current[1]} data-testid="cuboid-ticker">
+      <div className="cuboid-prism" style={{ transform: `translateZ(calc(var(--cz) * -1)) rotateX(${step * (360 / n)}deg)` }}>
+        {tickerItems.map(([icon, text], i) => <div className="cuboid-face" key={text} style={{ transform: `rotateX(${-i * (360 / n)}deg) translateZ(var(--cz))` }}><span className="cuboid-icon">{icon}</span><span className="cuboid-text">{text}</span><ChevronRight size={16} className="cuboid-go" /></div>)}
+      </div>
+    </button>
+    <div className="cuboid-dots">{tickerItems.map((item, i) => <button type="button" key={item[1]} aria-label={item[1]} className={i === ((step % n) + n) % n ? 'on' : ''} onClick={() => setStep(step - (((step % n) + n) % n) + i)} />)}</div>
+  </div>;
 }
 
 function Stat({ value, label }: { value: string | number; label: string }) {
@@ -406,7 +428,7 @@ function CategoryPage({ category, data, openEntry }: { category: Category; data:
     <>
       <div className="eyebrow" style={{ color: meta.color }}>Archive sector / {meta.label}</div>
       <h1 className="display-title">{meta.label}</h1>
-      <p className="lede">{category === 'appendix' ? 'Reference terms used throughout the archive. Select a term to inspect its working definition.' : `Field dossiers and calculated feats filed under the ${meta.label.toLowerCase()} channel.`}</p>
+      <p className="lede">{isTheory(category) ? 'Theories and speculation surrounding the world of Goddess of Victory. Open a file to read the full investigation.' : category === 'appendix' ? 'Reference terms used throughout the archive. Select a term to inspect its working definition.' : `Field dossiers and calculated feats filed under the ${meta.label.toLowerCase()} channel.`}</p>
       <div className="toolbar"><div className="input-wrap"><Search size={15} /><input className="text-input" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder={`Filter ${meta.label.toLowerCase()}...`} aria-label={`Filter ${meta.label}`} data-testid={`input-filter-${category}`} /></div><span style={{ color: 'var(--muted)', font: '11px var(--font-mono)' }}>{entries.length} / {data[category].length} records</span></div>
       {entries.length ? <div className="entry-grid">{entries.map((entry) => <EntryCard key={entry.name} category={category} entry={entry} color={meta.color} openEntry={openEntry} />)}</div> : <EmptyState text="No records match this filter." />}
     </>
@@ -416,7 +438,7 @@ function CategoryPage({ category, data, openEntry }: { category: Category; data:
 function EntryCard({ category, entry, color, openEntry }: { category: Category; entry: Entry; color: string; openEntry: (category: Category, name: string) => void }) {
   return <button className="entry-card" type="button" style={{ '--entry-color': color } as React.CSSProperties} onClick={() => openEntry(category, entry.name)} data-testid={`card-entry-${entry.name.replaceAll(' ', '-').toLowerCase()}`}>
     <div><div className="entry-card-header"><span className="entry-tag">{entry.tag}</span><span className="entry-code">{entry.tier || 'UNRATED'}</span></div><div className="entry-name-row">{entry.image ? <div className="entry-avatar category-glow" style={{ '--profile-glow': `var(--category-${category})` } as React.CSSProperties}><img src={entry.image} alt="" /></div> : null}<div className="entry-name">{entry.name}</div></div><div className="entry-class">{entry.cls}</div><p className="entry-summary">{plainEntryText(entry.summary)}</p></div>
-    <div className="entry-foot"><span>{category === 'appendix' ? 'REFERENCE TERM' : entry.speed !== 'N/A' ? 'FEAT DATA AVAILABLE' : 'PARTIAL RECORD'}</span><span className="entry-arrow"><ArrowRight size={15} /></span></div>
+    <div className="entry-foot"><span>{category === 'appendix' ? 'REFERENCE TERM' : isTheory(category) ? 'THEORY FILE' : entry.speed !== 'N/A' ? 'FEAT DATA AVAILABLE' : 'PARTIAL RECORD'}</span><span className="entry-arrow"><ArrowRight size={15} /></span></div>
   </button>;
 }
 
@@ -425,14 +447,15 @@ function EmptyState({ text }: { text: string }) {
 }
 
 function TierListPage({ data, openEntry }: { data: DatabaseState; openEntry: (category: Category, name: string) => void }) {
-  const entries = allEntries(data);
+  const entries = allEntries(data).filter(({ category }) => !isTheory(category));
   return <>
     <div className="eyebrow" style={{ color: 'var(--gold)' }}>Power index / comparative scale</div>
     <h1 className="display-title">Tier <em>List</em></h1>
     <p className="tier-note">Ranked by raw specs and documented feats, not game mechanics. Undefined means more data is needed — not that a unit is weak.</p>
     <div className="tier-list">{tiers.map((tier) => {
       const members = entries.filter(({ item }) => (item.tier || 'Undefined') === tier);
-      return <div className="tier-row" key={tier}><div className="tier-label" style={{ color: tierColors[tier], borderTop: `3px solid ${tierColors[tier]}` }}>{tier}</div><div className="tier-members">{members.length ? members.map(({ item, category }) => <button className="tier-member" type="button" key={`${category}-${item.name}`} onClick={() => openEntry(category, item.name)} data-testid={`tier-member-${item.name.replaceAll(' ', '-').toLowerCase()}`}><div className="tier-avatar category-glow" style={{ '--profile-glow': `var(--category-${category})` } as React.CSSProperties}>{item.image ? <img src={item.image} alt="" /> : item.name.charAt(0)}</div><span className="tier-member-name">{item.name}</span></button>) : <span style={{ color: 'var(--faint)', font: '11px var(--font-mono)' }}>No confirmed placements</span>}</div></div>;
+      const n = members.length; const cols = n <= 4 ? Math.max(n, 1) : n < 8 ? 4 : Math.max(6, Math.ceil(n / 2));
+      return <div className="tier-row" key={tier}><div className="tier-label" title={tier} style={{ color: tierColors[tier], borderTop: `3px solid ${tierColors[tier]}` }}>{tier === 'Undefined' ? 'U' : tier}</div><div className="tier-members" style={{ '--tier-cols': cols } as React.CSSProperties}>{members.length ? members.map(({ item, category }) => <button className="tier-member" type="button" key={`${category}-${item.name}`} onClick={() => openEntry(category, item.name)} data-testid={`tier-member-${item.name.replaceAll(' ', '-').toLowerCase()}`}><div className="tier-avatar category-glow" style={{ '--profile-glow': `var(--category-${category})` } as React.CSSProperties}>{item.image ? <img src={item.image} alt="" /> : item.name.charAt(0)}</div><span className="tier-member-name">{item.name}</span></button>) : <span style={{ color: 'var(--faint)', font: '11px var(--font-mono)' }}>No confirmed placements</span>}</div></div>;
     })}</div>
   </>;
 }
@@ -518,9 +541,9 @@ function DossierPage({ category, name, data, onBack, onEdit }: { category: Categ
     {entry.image && <figure className="dossier-profile category-glow" style={{ '--profile-glow': `var(--category-${category})` } as React.CSSProperties}><img src={entry.image} alt={entry.name} /></figure>}
     <div className="dossier-summary"><EntryBody text={entry.summary} data={data} /></div>
     {entry.images?.length ? <div className="dossier-images">{(entry.images || []).map((image, index) => <figure key={`${image.url}-${index}`}><img src={image.url} alt={image.alt || entry.name} loading="lazy" /><figcaption>{image.tags?.length ? image.tags.map((tag) => `#${tag}`).join(' ') : 'ARCHIVE IMAGE'}</figcaption></figure>)}</div> : null}
-    <div className="specs">{[['Speed', entry.speed], ['Power / Strength', entry.strength], ['Durability', entry.durability]].map(([label, value]) => <div className="spec" key={label}><div className="spec-label">{label}</div><div className="spec-value">{value}</div></div>)}</div>
+    {!isTheory(category) && <div className="specs">{[['Speed', entry.speed], ['Power / Strength', entry.strength], ['Durability', entry.durability]].map(([label, value]) => <div className="spec" key={label}><div className="spec-label">{label}</div><div className="spec-value">{value}</div></div>)}</div>}
     {entry.extra?.length ? <><div className="block-title">Additional measurements</div><div className="extra-grid">{entry.extra.map((item) => <div className="spec" key={item.label}><div className="spec-label">{item.label}</div><div className="spec-value">{item.value}</div></div>)}</div></> : null}
-    {entry.hypothetical ? <><div className="block-title">Working hypothesis</div><div className="hypothesis"><EntryBody text={entry.hypothetical} data={data} /></div></> : null}
+    {entry.hypothetical && !isTheory(category) ? <><div className="block-title">Working hypothesis</div><div className="hypothesis"><EntryBody text={entry.hypothetical} data={data} /></div></> : null}
     {entry.notes?.length ? <><div className="block-title">Notes</div><div className="archive-notes">{entry.notes.map((note, index) => <div className="archive-note" key={index}><span className="note-marker">{note.marker}</span><div><strong>{note.author || 'Community note'}</strong><p><ReferenceText text={note.text} data={data} /></p></div></div>)}</div></> : null}
     <div className="block-title">Record note</div><p style={{ color: 'var(--muted)', font: '12px/1.7 var(--font-mono)' }}>This dossier is a community-maintained interpretation. Approved records can be revised from the database editor.</p>
   </article>;
@@ -592,17 +615,17 @@ function EditorModal({ initial, category, onClose, onSave }: { initial?: Entry |
     <div className="field"><label>Name</label><input className="text-input" value={form.name} onChange={e => setField('name', e.target.value)} required /></div>
     <div className="field"><label>Classification</label><input className="text-input" value={form.cls} onChange={e => setField('cls', e.target.value)} required /></div>
     <div className="field"><label>File marker</label><input className="text-input" value={form.tag} onChange={e => setField('tag', e.target.value)} /></div>
-    <div className="field"><label>Tier placement</label><select className="select-input" value={form.tier || 'Undefined'} onChange={e => setField('tier', e.target.value)}>{tiers.map(t => <option key={t}>{t}</option>)}</select></div>
+    {!isTheory(category) && <div className="field"><label>Tier placement</label><select className="select-input" value={form.tier || 'Undefined'} onChange={e => setField('tier', e.target.value)}>{tiers.map(t => <option key={t}>{t}</option>)}</select></div>}
     <div className="field full summary-field"><label>Actual summary / feats</label><button className="document-launch" type="button" onClick={() => setDocumentField('summary')}><span className="document-launch-icon"><FileText size={20} /></span><span><strong>Open actual summary editor</strong><small>{plainEntryText(form.summary).slice(0, 110) || 'No summary written yet'}</small></span><Pencil size={16}/></button></div>
-    <div className="field"><label>Speed</label><input className="text-input" value={form.speed} onChange={e => setField('speed', e.target.value)} /></div>
+    {!isTheory(category) && <><div className="field"><label>Speed</label><input className="text-input" value={form.speed} onChange={e => setField('speed', e.target.value)} /></div>
     <div className="field"><label>Power / strength</label><input className="text-input" value={form.strength} onChange={e => setField('strength', e.target.value)} /></div>
     <div className="field"><label>Durability</label><input className="text-input" value={form.durability} onChange={e => setField('durability', e.target.value)} /></div>
-    <div className="field full summary-field"><label>Hypothetical summary</label><button className="document-launch" type="button" onClick={() => setDocumentField('hypothetical')}><span className="document-launch-icon"><FileText size={20} /></span><span><strong>Open hypothetical editor</strong><small>{plainEntryText(form.hypothetical || '').slice(0, 110) || 'No hypothesis written yet'}</small></span><Pencil size={16}/></button></div>
+    <div className="field full summary-field"><label>Hypothetical summary</label><button className="document-launch" type="button" onClick={() => setDocumentField('hypothetical')}><span className="document-launch-icon"><FileText size={20} /></span><span><strong>Open hypothetical editor</strong><small>{plainEntryText(form.hypothetical || '').slice(0, 110) || 'No hypothesis written yet'}</small></span><Pencil size={16}/></button></div></>}
     <div className="field full"><label>Primary profile image</label><div className="image-pick-row">{form.image ? <img className="image-thumb" src={form.image} alt="" /> : null}<ImagePickButton onUrl={(url) => setField('image', url)} />{form.image ? <button type="button" className="btn ghost mini" onClick={() => setField('image', '')}><X size={12}/> Remove</button> : null}</div></div>
     <div className="field full"><div className="edit-section-label">Voice lines</div><div className="note-guide">Add as many lines as you like. One plays when someone opens this entry — line 1 is the most common and the chances adjust automatically. The victory line plays when this character wins in Compare.</div>
       {lines.map((line, i) => <VoiceSlot key={i} label={`Line ${i + 1} · ${percents[i]}% chance`} value={line} onChange={(v) => setLines(v ? lines.map((x, j) => j === i ? v : x) : lines.filter((_, j) => j !== i))} />)}
       <button type="button" className="btn ghost" onClick={() => setLines([...lines, undefined])}><Plus size={13}/> Add voice line</button>
-      <VoiceSlot label="Victory line · plays on Compare win" value={victoryLine(form)} onChange={(v) => setForm((p) => ({ ...p, voices: lines.filter((x): x is VoiceLine => !!x?.url), victoryVoice: v, voiceVersion: 2 }))} /></div>
+      {!isTheory(category) && <VoiceSlot label="Victory line · plays on Compare win" value={victoryLine(form)} onChange={(v) => setForm((p) => ({ ...p, voices: lines.filter((x): x is VoiceLine => !!x?.url), victoryVoice: v, voiceVersion: 2 }))} />}</div>
     <div className="field full"><div className="editor-section-head"><label>Notes</label><button type="button" className="btn ghost" onClick={addNote}><Plus size={13}/> Add note</button></div><div className="note-guide">Seth marker: ♤ · Community markers: ○ ● □ ♡ ◇ ♧ ☆ ¤</div>{(form.notes || []).map((note, index) => <div className="editor-subrow note-row" key={index}><select className="select-input note-marker-select" value={note.marker} onChange={e => updateNote(index,{marker:e.target.value as NoteMarker})}>{noteMarkers.map(m=><option key={m}>{m}</option>)}</select><input className="text-input" value={note.author} onChange={e => updateNote(index,{author:e.target.value})} placeholder="Author" /><textarea className="text-area" value={note.text} onChange={e => updateNote(index,{text:e.target.value})} placeholder="Note text. Use *Term* for references." /></div>)}</div>
   </div>{saveError && <div className="form-error" role="alert">{saveError}</div>}</div><div className="edit-screen-foot"><span>Changes are published when you save.</span><div><button className="btn ghost" type="button" onClick={onClose}>Cancel</button><button className="btn primary" type="submit"><Database size={14}/> Save to archive</button></div></div></form>;
 }
@@ -617,7 +640,7 @@ function ReferenceText({ text, data }: { text: string; data: DatabaseState }) {
   const [selected, setSelected] = useState<string | null>(null);
   const parts = text.split(/(\*[^*]+\*)/g);
   const findTerm = (raw: string) => data.appendix.find(t => t.name.toLowerCase() === raw.toLowerCase());
-  return <>{parts.map((part, i) => { const match = part.match(/^\*([^*]+)\*$/); if (!match) return <span key={i}>{part}</span>; const word = match[1] ?? ''; const dossier = allEntries(data).find(({item}) => item.name.toLowerCase() === word.toLowerCase()); const glossary = findTerm(word); return <button key={i} type="button" className="reference-token" onClick={() => dossier ? setLocation(`/entry/${dossier.category}/${encodeURIComponent(dossier.item.name)}`) : setSelected(word)}>{word}</button>; })}{selected && <div className="reference-popover" onMouseDown={() => setSelected(null)}><div className="reference-card" onMouseDown={e=>e.stopPropagation()}><button className="reference-close" onClick={()=>setSelected(null)}><X size={14}/></button>{(() => { const glossary = findTerm(selected); return glossary ? <><div className="eyebrow">Index reference</div><h3>{glossary.name}</h3><p>{glossary.summary}</p></> : <><div className="eyebrow">Index reference</div><h3>{selected}</h3><p>No matching entry exists yet. Add it to the Appendix to define it.</p></>; })()}</div></div>}</>;
+  return <>{parts.map((part, i) => { const match = part.match(/^\*([^*]+)\*$/); if (!match) return <span key={i}>{part}</span>; const word = match[1] ?? ''; const dossier = allEntries(data).find(({item}) => item.name.toLowerCase() === word.toLowerCase()); const glossary = findTerm(word); return <button key={i} type="button" className="reference-token" onClick={() => dossier ? setLocation(`/entry/${dossier.category}/${encodeURIComponent(dossier.item.name)}`) : setSelected(word)}>{word}</button>; })}{selected && typeof document !== 'undefined' && createPortal(<div className="reference-popover" onMouseDown={() => setSelected(null)}><div className="reference-card" onMouseDown={e=>e.stopPropagation()}><button className="reference-close" onClick={()=>setSelected(null)}><X size={14}/></button>{(() => { const glossary = findTerm(selected); return glossary ? <><div className="eyebrow">Index reference</div><h3>{glossary.name}</h3><p>{glossary.summary}</p></> : <><div className="eyebrow">Index reference</div><h3>{selected}</h3><p>No matching entry exists yet. Add it to the Appendix to define it.</p></>; })()}</div></div>, document.body)}</>;
 }
 
 function EmailAuthModal({ onClose }: { onClose: () => void }) {
