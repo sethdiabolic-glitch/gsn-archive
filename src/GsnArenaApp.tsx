@@ -8,7 +8,7 @@ import { getArt, getPendingArt, isGsnAdmin, setArtStatus, submitArtBatch, supaba
 import { deleteArchiveEntry, loadArchive, saveArchiveEntry, seedArchive } from './lib/archive';
 import {
   Archive, ArrowLeft, ArrowRight, BookOpen, ChevronRight, CircleDot, Database,
-  FileText, FolderArchive, Gauge, GitCompare, Layers3, Menu, Pencil, Plus,
+  FileText, FolderArchive, Gauge, GitCompare, Layers3, Menu, Pencil, Plus, Palette,
   Radar, ScanSearch, Lightbulb, Search, Shield, Swords, Trash2, X, Image, Upload, Check, Ban, AlertTriangle, LogIn,
 } from 'lucide-react';
 
@@ -392,27 +392,29 @@ function HomePage({ data, navigate, openEntry }: { data: DatabaseState; navigate
   );
 }
 
-const tickerItems: [string, string, string][] = [
-  ['🌌', 'Explore the world beyond the battlefield', '/infra'],
-  ['📖', 'Read dossiers on your favorite Nikkes', '/characters'],
-  ['⚔️', 'Explore what your Units can really do', '/compare'],
-  ['🧩', 'Dig deep into theories surrounding the world of Goddess of Victory', '/theories'],
-  ['🎨', 'Browse art from across the Nikke universe', '/community'],
+const tickerItems: { icon: typeof Radar; text: string; to: string }[] = [
+  { icon: Radar, text: 'Explore the world beyond the battlefield', to: '/infra' },
+  { icon: BookOpen, text: 'Read dossiers on your favorite Nikkes', to: '/characters' },
+  { icon: Swords, text: 'Explore what your Units can really do', to: '/compare' },
+  { icon: Lightbulb, text: 'Dig deep into theories surrounding the world of Goddess of Victory', to: '/theories' },
+  { icon: Palette, text: 'Browse art from across the Nikke universe', to: '/community' },
 ];
 function CuboidTicker({ navigate }: { navigate: (path: string) => void }) {
   const [step, setStep] = useState(0);
   const [paused, setPaused] = useState(false);
-  useEffect(() => { if (paused) return; const t = window.setInterval(() => setStep((v) => v + 1), 3200); return () => window.clearInterval(t); }, [paused]);
+  useEffect(() => { if (paused) return; const t = window.setInterval(() => setStep((v) => v + 1), 3400); return () => window.clearInterval(t); }, [paused]);
   const n = tickerItems.length;
   const current = tickerItems[((step % n) + n) % n]!;
   return <div className="cuboid" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
     <div className="cuboid-label">ARK // DIRECTIVES</div>
-    <button type="button" className="cuboid-stage" onClick={() => navigate(current[2])} aria-label={current[1]} data-testid="cuboid-ticker">
-      <div className="cuboid-prism" style={{ transform: `translateZ(calc(var(--cz) * -1)) rotateX(${step * (360 / n)}deg)` }}>
-        {tickerItems.map(([icon, text], i) => <div className="cuboid-face" key={text} style={{ transform: `rotateX(${-i * (360 / n)}deg) translateZ(var(--cz))` }}><span className="cuboid-icon">{icon}</span><span className="cuboid-text">{text}</span><ChevronRight size={16} className="cuboid-go" /></div>)}
+    <button type="button" className="cuboid-stage" onClick={() => navigate(current.to)} aria-label={current.text} data-testid="cuboid-ticker">
+      <div className="cuboid-face" key={current.to}>
+        <span className="cuboid-icon"><current.icon size={34} strokeWidth={1.5} /></span>
+        <span className="cuboid-text">{current.text}</span>
+        <ChevronRight size={20} className="cuboid-go" />
       </div>
     </button>
-    <div className="cuboid-dots">{tickerItems.map((item, i) => <button type="button" key={item[1]} aria-label={item[1]} className={i === ((step % n) + n) % n ? 'on' : ''} onClick={() => setStep(step - (((step % n) + n) % n) + i)} />)}</div>
+    <div className="cuboid-dots">{tickerItems.map((item, i) => <button type="button" key={item.to} aria-label={item.text} className={i === ((step % n) + n) % n ? 'on' : ''} onClick={() => setStep(step - (((step % n) + n) % n) + i)} />)}</div>
   </div>;
 }
 
