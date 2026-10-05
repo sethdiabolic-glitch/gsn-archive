@@ -400,21 +400,40 @@ const tickerItems: { icon: typeof Radar; text: string; to: string }[] = [
   { icon: Palette, text: 'Browse art from across the Nikke universe', to: '/community' },
 ];
 function CuboidTicker({ navigate }: { navigate: (path: string) => void }) {
-  const [step, setStep] = useState(0);
+  const [index, setIndex] = useState(0);
+  const [nextIndex, setNextIndex] = useState<number | null>(null);
+  const [landed, setLanded] = useState(false);
   const [paused, setPaused] = useState(false);
-  useEffect(() => { if (paused) return; const t = window.setInterval(() => setStep((v) => v + 1), 3400); return () => window.clearInterval(t); }, [paused]);
   const n = tickerItems.length;
-  const current = tickerItems[((step % n) + n) % n]!;
+  useEffect(() => {
+    if (paused || nextIndex !== null) return;
+    const t = window.setTimeout(() => { setLanded(false); setNextIndex((index + 1) % n); }, 3400);
+    return () => window.clearTimeout(t);
+  }, [index, nextIndex, paused, n]);
+  useEffect(() => {
+    if (nextIndex === null) return;
+    const t = window.setTimeout(() => { setIndex(nextIndex); setNextIndex(null); setLanded(true); }, 900);
+    return () => window.clearTimeout(t);
+  }, [nextIndex]);
+  const current = tickerItems[index]!;
+  const upcoming = nextIndex === null ? null : tickerItems[nextIndex];
   return <div className="cuboid" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
     <div className="cuboid-label">ARK // DIRECTIVES</div>
     <button type="button" className="cuboid-stage" onClick={() => navigate(current.to)} aria-label={current.text} data-testid="cuboid-ticker">
-      <div className="cuboid-face" key={current.to}>
-        <span className="cuboid-icon"><current.icon size={34} strokeWidth={1.5} /></span>
-        <span className="cuboid-text">{current.text}</span>
-        <ChevronRight size={20} className="cuboid-go" />
+      <div className={`cuboid-roller${upcoming ? ' is-rolling' : ''}`}>
+        <div className={`cuboid-face cuboid-front${landed ? ' is-landed' : ''}`}>
+          <span className="cuboid-icon"><current.icon size={34} strokeWidth={1.5} /></span>
+          <span className="cuboid-text">{current.text}</span>
+          <ChevronRight size={20} className="cuboid-go" />
+        </div>
+        {upcoming && <div className="cuboid-face cuboid-next" aria-hidden="true">
+          <span className="cuboid-icon"><upcoming.icon size={34} strokeWidth={1.5} /></span>
+          <span className="cuboid-text">{upcoming.text}</span>
+          <ChevronRight size={20} className="cuboid-go" />
+        </div>}
       </div>
     </button>
-    <div className="cuboid-dots">{tickerItems.map((item, i) => <button type="button" key={item.to} aria-label={item.text} className={i === ((step % n) + n) % n ? 'on' : ''} onClick={() => setStep(step - (((step % n) + n) % n) + i)} />)}</div>
+    <div className="cuboid-dots">{tickerItems.map((item, i) => <button type="button" key={item.to} aria-label={item.text} className={i === (nextIndex ?? index) ? 'on' : ''} disabled={nextIndex !== null} onClick={() => { if (i !== index) { setLanded(false); setNextIndex(i); } }} />)}</div>
   </div>;
 }
 
