@@ -5,8 +5,9 @@ export async function loadArchive<T>(fallback: T): Promise<{ data: T; hasRemote:
   const { data, error } = await supabase.from('archive_entries').select('category,name,data');
   if (error || !data?.length) return { data: fallback, hasRemote: false };
   const result: Record<string, unknown[]> = {};
-  for (const row of data as Array<{ category: string; data: unknown }>) {
-    (result[row.category] ??= []).push(row.data);
+  for (const row of data as Array<{ category: string; name: string; data: unknown }>) {
+    const item = row.data && typeof row.data === 'object' && !Array.isArray(row.data) ? { name: row.name, ...(row.data as object) } : row.data;
+    (result[row.category] ??= []).push(item);
   }
   return { data: result as T, hasRemote: true };
 }

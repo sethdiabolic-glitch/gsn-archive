@@ -153,8 +153,9 @@ function AppContent() {
     loadArchive(getStoredData()).then(async ({ data: remote, hasRemote }) => {
       const merged = { ...clone(defaultData), ...(remote as DatabaseState) };
       setData(merged);
-      const remoteTerms = (remote as DatabaseState).settings?.find((item) => item.name === 'terms')?.data;
-      if (remoteTerms?.content) setTerms(remoteTerms);
+      const termsRow = (remote as DatabaseState).settings?.find((item) => item.name === 'terms') as any;
+      const remoteTerms = termsRow?.content ? termsRow : termsRow?.data;
+      if (remoteTerms?.content) setTerms({ content: remoteTerms.content, updated_at: remoteTerms.updated_at });
       const remoteTagRow = (remote as DatabaseState).settings?.find((item) => item.name === 'image_tags') as any;
       const remoteTags = remoteTagRow?.tags ?? remoteTagRow?.data?.tags;
       if (Array.isArray(remoteTags)) setImageTags(remoteTags);
@@ -249,7 +250,13 @@ function AppContent() {
             page === 'community-editor' ? 'Community moderation' :
               page === 'entry' ? 'Dossier' : activeCategory ? categoryMeta[activeCategory].label : 'Archive';
 
-  if (!archiveReady) return <div className="auth-screen"><div className="auth-card"><div className="eyebrow">GSN Arena / uplink</div><h1 className="display-title">Loading <em>archive</em></h1><p className="lede">Connecting to the shared archive…</p></div></div>;
+  if (!archiveReady) return <div className="auth-screen"><div className="auth-card"><div className="eyebrow">GSN Arena / uplink</div><h1 className="display-title">Loading <em>archive</em></h1><p className="lede">Connecting to the shared archive…</p></div>
+    <section className="sr-only" aria-label="Archive index">
+      <h2>GSN Arena — community archive for GODDESS OF VICTORY: NIKKE</h2>
+      <p>Full plain-text archive: <a href="/llms.txt">/llms.txt</a></p>
+      {Object.entries(defaultData).filter(([cat]) => cat !== 'settings').map(([cat, items]) => <div key={cat}><h3><a href={`/${cat}`}>{cat}</a></h3><ul>{(items as Array<{ name: string; summary?: string }>).map(it => <li key={it.name}><strong>{it.name}</strong>{it.summary ? `: ${plainEntryText(String(it.summary))}` : ''}</li>)}</ul></div>)}
+    </section>
+  </div>;
 
   return (
     <div className="app-shell">
