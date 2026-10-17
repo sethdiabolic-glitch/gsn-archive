@@ -60,7 +60,7 @@ test("Appendix opens an accessible definition, Escape closes it and restores foc
         references.ArchiveReferences,
         {
           entries: [
-            { category: "characters", name: "Anis", summary: "Nikke" },
+            { category: "characters", name: "Anis", summary: "*Goddessium*" },
             {
               category: "appendix",
               name: "Goddessium",
@@ -82,6 +82,8 @@ test("Appendix opens an accessible definition, Escape closes it and restores foc
   assert.ok(document.querySelector('[role="dialog"]'));
   assert.equal(document.querySelector(".definition-title").textContent, "Goddessium");
   assert.equal(document.querySelector(".definition-body strong").textContent, "Armour");
+  assert.equal(document.querySelector(".backlinks"), null);
+  assert.ok(!document.querySelector('[role="dialog"]').textContent.includes("Referenced by"));
   assert.equal(visits.length, 0);
   await act(async () =>
     document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
