@@ -10,7 +10,7 @@ import { Portrait } from './Portrait';
 import { TagSearch } from './TagSearch';
 import { GalleryFilterBar, useGalleryFilters } from './GalleryFilters';
 import { cleanTag, uniqueTags, tagKey, filterArtworks, defaultGalleryFilters } from './lib/gallery';
-import { ArchiveReferences, ReferenceInline, Backlinks, useArchiveReferences } from './ArchiveReferences';
+import { ArchiveReferences, ReferenceInline, useArchiveReferences } from './ArchiveReferences';
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { RichEntryEditor } from './RichEntryEditor';
 import { RichDocument } from './RichDocument';
@@ -622,7 +622,6 @@ function DossierPage({ category, name, data, onBack, onEdit }: { category: Categ
     {entry.extra?.length ? <><div className="block-title">Additional measurements</div><div className="extra-grid">{entry.extra.map((item) => <div className="spec" key={item.label}><div className="spec-label">{item.label}</div><div className="spec-value">{item.value}</div></div>)}</div></> : null}
     {entry.hypothetical && !isTheory(category) ? <HypotheticalSummary key={`${category}/${entry.id || entry.name}`}><EntryBody text={entry.hypothetical} data={data} /></HypotheticalSummary> : null}
     {entry.notes?.length ? <><div className="block-title">Notes</div><div className="archive-notes">{entry.notes.map((note, index) => <div className="archive-note" key={index}><span className="note-marker">{note.marker}</span><div><strong>{note.author || 'Community note'}</strong><p><ReferenceText text={note.text} data={data} /></p></div></div>)}</div></> : null}
-    <Backlinks entry={{ ...entry, category }} />
     <div className="block-title">Record note</div><p style={{ color: 'var(--muted)', font: '12px/1.7 var(--font-mono)' }}>This dossier is a community-maintained interpretation. Approved records can be revised from the database editor.</p>
   </article>;
 }

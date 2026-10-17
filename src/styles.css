@@ -333,7 +333,7 @@ a { color: inherit; text-decoration: none; }
   .mobile-brand img { width: 30px; height: 30px; object-fit: contain; }
   .mobile-brand span { color: var(--red-bright); }
   .menu-button { display: grid; place-items: center; border: 1px solid var(--line); background: var(--surface); width: 36px; height: 36px; cursor: pointer; }
-  .topbar { height: 58px; padding: 0 17px; }
+  .topbar { height: 58px; padding: 0 17px; top: 60px; }
   .search-trigger { display: none; }
   .content { padding: 32px 17px 54px; }
   .hero-panel { display: block; }
@@ -636,12 +636,14 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .spec-value { overflow-wrap: anywhere; }
 
 /* Word-style ribbon with labelled, responsive control groups. */
-.document-editor { width: 100%; min-width: 0; }
+.document-editor { --ribbon-top: 72px; width: 100%; min-width: 0; }
 .document-header { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
 .document-heading { flex: 1 1 250px; min-width: 0; }
 .document-heading h2 { margin: 5px 0 0; font: 700 24px/1.2 var(--font-display); overflow-wrap: anywhere; }
 .document-guidance { max-width: 860px; color: var(--muted); font-size: 13px; line-height: 1.7; margin: 16px 0; }
-.document-ribbon { border: 1px solid var(--line-bright); background: var(--surface); border-radius: 8px; }
+/* Sticky stays in flow: no jump or scroll-event work when the ribbon pins. */
+.document-ribbon { position: sticky; top: var(--ribbon-top); z-index: 9; max-height: max(100px, calc(100dvh - var(--ribbon-top) - 120px)); overflow-y: auto; border: 1px solid var(--line-bright); background: var(--surface); border-radius: 8px; box-shadow: 0 6px 18px var(--shadow); }
+.document-paper :is(p, h2, h3, li, blockquote, img, table) { scroll-margin-top: calc(var(--ribbon-top) + 220px); }
 .document-toolbar { display: flex; flex-wrap: wrap; gap: 0; padding: 8px; }
 .ribbon-group { display: flex; flex-direction: column; justify-content: space-between; gap: 8px; padding: 6px 12px; border-right: 1px solid var(--line); }
 .ribbon-group:last-child { border-right: 0; }
@@ -681,13 +683,23 @@ button:disabled { cursor: not-allowed; opacity: .55; }
   .document-header { gap: 12px; }
   .document-heading { order: -1; flex-basis: 100%; }
   .document-header .row-actions { flex: 1; }
-  .ribbon-group { padding: 6px; border-right: 0; border-bottom: 1px solid var(--line); width: 100%; }
-  .ribbon-actions { justify-content: flex-start; }
-  .ribbon-label { text-align: left; }
+  .document-editor { --ribbon-top: 118px; }
+  /* One horizontally scrollable row leaves room to actually edit on a phone. */
+  .document-toolbar { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; }
+  .ribbon-group { flex: 0 0 auto; padding: 6px; }
+  .ribbon-actions { flex-wrap: nowrap; }
+  .ribbon-label { text-align: center; }
   .document-canvas { padding: 18px; }
   .feat-settings-grid { grid-template-columns: 1fr; }
   .rich-document img[data-float="left"], .rich-document img[data-float="right"] { float: none; max-width: 100%; margin: 1.25em auto; }
   .dossier-profile img { max-width: 100%; max-height: 460px; }
+}
+
+/* Landscape phones and short windows need the same compact control row. */
+@media (max-height: 520px) {
+  .document-toolbar { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; }
+  .ribbon-group { flex: 0 0 auto; padding: 6px; }
+  .ribbon-actions { flex-wrap: nowrap; }
 }
 
 /* Inline archive links and accessible Appendix definitions. */
@@ -744,13 +756,9 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .reference-options, .revision-list { max-height: 300px; overflow-y: auto; }
 .reference-options .search-result, .revision-list .search-result { width: 100%; display: flex; flex-wrap: wrap; gap: 12px; }
 .reference-options .search-result > span, .revision-list .search-result > span { color: var(--muted); font-size: 12px; }
-.reference-audit h3, .backlinks h3 { margin: 0 0 12px; color: var(--gold); font-size: 14px; }
+.reference-audit h3 { margin: 0 0 12px; color: var(--gold); font-size: 14px; }
 .reference-audit p, .reference-audit li { font-size: 13px; color: var(--muted); line-height: 1.8; }
 .reference-audit ul { list-style: disc; padding-left: 20px; }
-.backlinks { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
-.backlinks ul { display: flex; flex-wrap: wrap; gap: 8px; }
-.backlinks a { display: inline-flex; gap: 10px; padding: 9px 12px; border: 1px solid var(--line-bright); border-radius: 5px; color: var(--gold); font-size: 13px; }
-.backlinks a span { color: var(--muted); font-size: 11px; }
 .feat-source-editor { margin-top: 8px; }
 .feat-source-editor > summary, .feat-evidence > summary { cursor: pointer; color: var(--gold); font: 12px/1.6 var(--font-body); }
 .feat-source-editor label { display: grid; gap: 6px; margin-top: 12px; }

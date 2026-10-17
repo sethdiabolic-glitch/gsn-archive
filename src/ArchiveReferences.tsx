@@ -3,7 +3,7 @@ import { createContext, useContext, useMemo, useRef, useState, type ReactNode } 
 import * as Dialog from "@radix-ui/react-dialog";
 import parse, { Text, attributesToProps, type DOMNode } from "html-react-parser";
 import { X, BookOpen } from "lucide-react";
-import { referencedBy, type LinkedEntry } from "./lib/reference-tools";
+import { type LinkedEntry } from "./lib/reference-tools";
 import { legacyToHtml } from "./lib/entry-content";
 import {
   referenceHref,
@@ -80,7 +80,6 @@ export function ArchiveReferences({
             <div className="rich-document definition-body">
               <ReferenceHtml html={legacyToHtml(selected?.summary || "")} />
             </div>
-            {selected && <Backlinks entry={selected} />}
             {selected && (
               <a
                 className="btn definition-open"
@@ -198,41 +197,4 @@ export function ReferenceHtml({ html }: { html: string }) {
 
 export function useArchiveReferences() {
   return useContext(ReferenceContext);
-}
-
-export function Backlinks({ entry }: { entry: ReferenceEntry }) {
-  const context = useArchiveReferences();
-  const links = useMemo(
-    () => (context ? referencedBy(entry, context.entries, context.aliases) : []),
-    [entry, context],
-  );
-  if (!links.length) return null;
-  return (
-    <section className="backlinks" aria-label="Referenced by">
-      <h3>Referenced by</h3>
-      <ul>
-        {links.map((link) => (
-          <li key={`${link.category}/${link.name}`}>
-            <a
-              href={referenceHref(link)}
-              onClick={(event) => {
-                if (
-                  event.button !== 0 ||
-                  event.metaKey ||
-                  event.ctrlKey ||
-                  event.shiftKey ||
-                  event.altKey
-                )
-                  return;
-                event.preventDefault();
-                context?.navigate(referenceHref(link));
-              }}
-            >
-              {link.name} <span>{link.category}</span>
-            </a>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
 }
