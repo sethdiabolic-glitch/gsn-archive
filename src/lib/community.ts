@@ -33,14 +33,14 @@ export function saveDemoArt(items: Artwork[]) {
 export async function getArt(): Promise<Artwork[]> {
   if (!supabase) return getDemoArt();
   const { data, error } = await supabase.from('artworks').select('*').eq('status', 'approved').order('created_at', { ascending: false });
-  if (error) throw error;
+  if (error) throw new Error(error.message);
   return (data || []) as Artwork[];
 }
 
 export async function getPendingArt(): Promise<Artwork[]> {
   if (!supabase) return getDemoArt().filter(a => a.status === 'pending');
   const { data, error } = await supabase.from('artworks').select('*').eq('status', 'pending').order('created_at', { ascending: true });
-  if (error) throw error;
+  if (error) throw new Error(error.message);
   return (data || []) as Artwork[];
 }
 
@@ -58,10 +58,14 @@ export async function submitArt(input: { title: string; artist_name: string; des
   const ext = input.file.name.split('.').pop()?.toLowerCase() || 'jpg';
   const path = `${user.id}/${crypto.randomUUID()}.${ext}`;
   const { error: uploadError } = await supabase.storage.from('community-art').upload(path, input.file, { upsert: false });
-  if (uploadError) throw uploadError;
+  if (uploadError) throw new Error(uploadError.message);
   const { data: publicData } = supabase.storage.from('community-art').getPublicUrl(path);
   const { error } = await supabase.from('artworks').insert({ title: input.title, artist_name: input.artist_name, description: input.description, rating: input.rating, image_url: publicData.publicUrl, status: 'pending', user_id: user.id, tags: input.tags || [] });
-  if (error) throw error;
+  if (error) {
+    const { error: cleanupError } = await supabase.storage.from('community-art').remove([path]);
+    if (cleanupError) throw new Error('Submission failed and the uploaded file could not be cleaned up. Please contact an admin.');
+    throw new Error(error.message);
+  }
 }
 
 // Calls the is_gsn_admin() database function (see supabase-schema.sql).
@@ -81,7 +85,7 @@ export async function setArtStatus(id: string, status: ArtworkStatus): Promise<v
     return;
   }
   const { error } = await supabase.from('artworks').update({ status }).eq('id', id);
-  if (error) throw error;
+  if (error) throw new Error(error.message);
 }
 
 export async function uploadArchiveImage(file: File): Promise<string> {
@@ -91,17 +95,27 @@ export async function uploadArchiveImage(file: File): Promise<string> {
   const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
   const path = `${user.id}/archive-${crypto.randomUUID()}.${ext}`;
   const { error } = await supabase.storage.from('community-art').upload(path, file, { upsert: false });
-  if (error) throw error;
+  if (error) throw new Error(error.message);
   return supabase.storage.from('community-art').getPublicUrl(path).data.publicUrl;
 }
 
 export async function deleteMyArt(art: Artwork): Promise<void> {
-  if (!supabase) return;
-  const { error } = await supabase.from('artworks').delete().eq('id', art.id);
-  if (error) throw error;
-  const marker = '/community-art/';
-  const i = art.image_url.indexOf(marker);
-  if (i >= 0) await supabase.storage.from('community-art').remove([art.image_url.slice(i + marker.length)]);
+  if (!supabase) throw new Error('Storage is not connected.');
+  // Keep the record as a retry handle until file deletion is confirmed.
+  const prefix = `${url}/storage/v1/object/public/community-art/`;
+  if (!art.image_url.startsWith(prefix)) throw new Error('Unrecognised image location. Ask an admin to review this artwork.');
+  const path = decodeURIComponent(art.image_url.slice(prefix.length).split('?')[0]!);
+  const { data: removed, error: storageError } = await supabase.storage.from('community-art').remove([path]);
+  if (storageError) throw new Error(storageError.message);
+  if (!removed?.length) {
+    // Storage may silently filter unauthorised deletes. Distinguish this from an already missing file.
+    const slash = path.lastIndexOf('/');
+    const { data: files, error: listError } = await supabase.storage.from('community-art').list(path.slice(0, slash), { search: path.slice(slash + 1) });
+    if (listError) throw new Error(listError.message);
+    if (files?.some(file => file.name === path.slice(slash + 1))) throw new Error('Image deletion was not permitted. The artwork record was kept; check storage policies and retry.');
+  }
+  const { data: deleted, error } = await supabase.from('artworks').delete().eq('id', art.id).select('id');
+  if (error || !deleted?.length) throw new Error('Image removed, but the artwork record could not be deleted. Retry the takedown to finish.');
 }
 
 export async function submitArtBatch(input: { title: string; artist_name: string; description: string; rating: ArtworkRating; items: { file: File; tags: string[]; title: string }[] }): Promise<void> {
@@ -121,6 +135,6 @@ export async function uploadArchiveFile(file: File, prefix = 'voice'): Promise<s
   const ext = file.name.split('.').pop()?.toLowerCase() || 'mp3';
   const path = `${user.id}/${prefix}-${crypto.randomUUID()}.${ext}`;
   const { error } = await supabase.storage.from('community-art').upload(path, file, file.type ? { upsert: false, contentType: file.type } : { upsert: false });
-  if (error) throw error;
+  if (error) throw new Error(error.message);
   return supabase.storage.from('community-art').getPublicUrl(path).data.publicUrl;
 }

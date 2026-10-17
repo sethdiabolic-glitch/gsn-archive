@@ -1,35 +1,40 @@
 import { supabase } from './community';
 
-export async function loadArchive<T>(fallback: T): Promise<{ data: T; hasRemote: boolean }> {
-  if (!supabase) return { data: fallback, hasRemote: false };
-  const { data, error } = await supabase.from('archive_entries').select('category,name,data');
-  if (error || !data?.length) return { data: fallback, hasRemote: false };
-  const result: Record<string, unknown[]> = {};
-  for (const row of data as Array<{ category: string; name: string; data: unknown }>) {
-    const item = row.data && typeof row.data === 'object' && !Array.isArray(row.data) ? { name: row.name, ...(row.data as object) } : row.data;
-    (result[row.category] ??= []).push(item);
+export async function loadArchive<T>(fallback: T): Promise<{ data: T; source: 'remote' | 'cache' | 'unconfigured'; error?: string }> {
+  if (!supabase) return { data: fallback, source: 'unconfigured' };
+  try {
+    const { data, error } = await supabase.from('archive_entries').select('id,category,name,data');
+    if (error) throw new Error(error.message);
+    const result: Record<string, unknown[]> = {};
+    for (const row of data || []) {
+      const item = row.data && typeof row.data === 'object' && !Array.isArray(row.data) ? { ...row.data, name: row.name, id: row.id } : row.data;
+      (result[row.category] ??= []).push(item);
+    }
+    return { data: result as T, source: 'remote' };
+  } catch (error) {
+    return { data: fallback, source: 'cache', error: error instanceof Error ? error.message : 'Shared archive unavailable' };
   }
-  return { data: result as T, hasRemote: true };
 }
 
-export async function saveArchiveEntry(category: string, name: string, data: unknown) {
-  if (!supabase) return;
-  const { error } = await supabase.from('archive_entries').upsert({ category, name, data, updated_at: new Date().toISOString() }, { onConflict: 'category,name' });
-  if (error) throw error;
+export async function loadArchiveAliases(): Promise<Array<{ category: string; name: string; entry_id: string }>> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('archive_entry_aliases').select('category,name,entry_id');
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+
+export async function saveArchiveEntry(category: string, name: string, data: unknown, originalName?: string) {
+  if (!supabase) throw new Error('Shared storage is not connected. Nothing was published.');
+  // Settings have fixed keys, unlike user-named dossiers.
+  const { error } = category === 'settings'
+    ? await supabase.from('archive_entries').upsert({ category, name, data, updated_at: new Date().toISOString() }, { onConflict: 'category,name' })
+    : await supabase.rpc('save_archive_entry', { p_category: category, p_name: name, p_data: data, p_original_name: originalName ?? null });
+  if (error) throw new Error(error.message);
 }
 
 export async function deleteArchiveEntry(category: string, name: string) {
-  if (!supabase) return;
-  const { error } = await supabase.from('archive_entries').delete().eq('category', category).eq('name', name);
-  if (error) throw error;
-}
-
-export async function seedArchive(data: Record<string, unknown[]>) {
-  if (!supabase) return;
-  const rows = Object.entries(data).flatMap(([category, entries]) =>
-    entries.map((entry: any) => ({ category, name: entry.name, data: entry, updated_at: new Date().toISOString() }))
-  );
-  if (!rows.length) return;
-  const { error } = await supabase.from('archive_entries').upsert(rows, { onConflict: 'category,name' });
-  if (error) throw error;
+  if (!supabase) throw new Error('Shared storage is not connected.');
+  const { data, error } = await supabase.from('archive_entries').delete().eq('category', category).eq('name', name).select('name');
+  if (error) throw new Error(error.message);
+  if (!data?.length) throw new Error('The entry was not deleted. Reload and check your admin access.');
 }
