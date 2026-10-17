@@ -49,6 +49,14 @@ export default {
     try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
+      // The router owns its status code and can overwrite setResponseStatus in loaders.
+      // Preserve the rendered retry UI, but tell crawlers this is a temporary outage.
+      if (response.headers.get("X-GSN-Archive-Unavailable") === "1") {
+        const headers = new Headers(response.headers);
+        headers.delete("X-GSN-Archive-Unavailable");
+        headers.set("Cache-Control", "no-store");
+        return new Response(response.body, { status: 503, headers });
+      }
       return await normalizeCatastrophicSsrResponse(response);
     } catch (error) {
       console.error(error);

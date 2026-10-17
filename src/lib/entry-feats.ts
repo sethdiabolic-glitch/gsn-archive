@@ -5,11 +5,13 @@ export const featDefinitions = [
 ] as const;
 
 export type FeatKey = (typeof featDefinitions)[number]["key"];
+export type FeatSource = { label?: string; chapter?: string; url?: string; image?: string };
 export type EntryFeats = {
   speed: string;
   strength: string;
   durability: string;
   hiddenFeats?: FeatKey[];
+  featSources?: Partial<Record<FeatKey, FeatSource>>;
   featLabels?: Partial<Record<FeatKey, string>>;
 };
 
@@ -21,6 +23,7 @@ export function visibleFeats(entry: EntryFeats) {
       key,
       label: entry.featLabels?.[key]?.trim() || label,
       value: entry[key],
+      source: entry.featSources?.[key],
     }));
 }
 
@@ -33,4 +36,14 @@ export function setFeatIncluded(entry: EntryFeats, key: FeatKey, included: boole
   if (included) hidden.delete(key);
   else hidden.add(key);
   return [...hidden];
+}
+
+export function safeHttpUrl(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
 }

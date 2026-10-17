@@ -1,3 +1,4 @@
+import { ReferencePicker } from "./ReferencePicker";
 import { useState, type ReactNode } from "react";
 import { useBlocker } from "@tanstack/react-router";
 import { EditorContent, useEditor } from "@tiptap/react";
@@ -24,6 +25,7 @@ import {
   Minus,
   Eye,
   Pencil,
+  BookOpen,
 } from "lucide-react";
 import { uploadArchiveImage } from "./lib/community";
 import { legacyToHtml, cleanEntryHtml, plainEntryText } from "./lib/entry-content";
@@ -43,11 +45,15 @@ export function RichEntryEditor({
   value,
   onSave,
   onBack,
+  onDraftChange,
+  draftStatus,
 }: {
   title: string;
   value: string;
   onSave: (html: string) => void;
   onBack: () => void;
+  onDraftChange?: (html: string) => void;
+  draftStatus?: string;
 }) {
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -57,6 +63,7 @@ export function RichEntryEditor({
   const [tableCols, setTableCols] = useState(3);
   const [tableHeader, setTableHeader] = useState(true);
   const [insertOpen, setInsertOpen] = useState(false);
+  const [referenceOpen, setReferenceOpen] = useState(false);
   useBlocker({
     shouldBlockFn: () =>
       busy || (dirty && !window.confirm("Leave without applying your document changes?")),
@@ -64,10 +71,25 @@ export function RichEntryEditor({
   });
   const editor = useEditor({
     extensions: entryEditorExtensions(),
+    // Reserve *name* and **name** for archive references. Ribbon formatting still works.
+    enableInputRules: [
+      "heading",
+      "bulletList",
+      "orderedList",
+      "blockquote",
+      "codeBlock",
+      "horizontalRule",
+      "strike",
+      "code",
+    ],
+    enablePasteRules: ["strike", "code", "link"],
     content: legacyToHtml(value),
     immediatelyRender: false,
     shouldRerenderOnTransaction: true,
-    onUpdate: () => setDirty(true),
+    onUpdate: ({ editor }) => {
+      setDirty(true);
+      onDraftChange?.(editor.getHTML());
+    },
     editorProps: {
       attributes: {
         class: "rich-document document-paper",
@@ -168,9 +190,15 @@ export function RichEntryEditor({
         </div>
       </header>
       <p className="document-guidance">
-        Format your summary, paste a table, or insert images. Apply it to the entry draft, then use{" "}
-        <strong>Save file</strong> to publish.
+        Format your summary, paste a table, or insert images. Wrap entry names or Appendix terms in
+        *asterisks* (for example, *Anis*). Preview to test links. Apply it to the entry draft, then
+        use <strong>Save file</strong> to publish.
       </p>
+      {draftStatus && (
+        <p className="draft-status" role="status">
+          {draftStatus}
+        </p>
+      )}
       {!preview && (
         <div className="document-ribbon">
           <div className="document-toolbar" aria-label="Formatting ribbon">
@@ -253,6 +281,12 @@ export function RichEntryEditor({
               )}
             </RibbonGroup>
             <RibbonGroup label="Insert">
+              {cmd(
+                "Reference",
+                referenceOpen,
+                () => setReferenceOpen(!referenceOpen),
+                <BookOpen size={17} />,
+              )}
               {cmd(
                 "Quote",
                 !!editor?.isActive("blockquote"),
@@ -453,6 +487,12 @@ export function RichEntryEditor({
         <div className="form-error" role="alert">
           {error}
         </div>
+      )}
+      {referenceOpen && !preview && (
+        <ReferencePicker
+          onClose={() => setReferenceOpen(false)}
+          onInsert={(text) => editor?.chain().focus().insertContent({ type: "text", text }).run()}
+        />
       )}
       <div className="document-status">
         <span>

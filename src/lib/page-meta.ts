@@ -1,3 +1,5 @@
+import { SITE_URL, isPublicCategory, type PublicArchive } from "./public-archive";
+import { plainEntryText } from "./entry-content";
 const labels: Record<string, string> = {
   characters: "Characters",
   heretics: "Heretics",
@@ -14,7 +16,7 @@ const labels: Record<string, string> = {
   "community-editor": "Art Moderation",
 };
 
-export function pageMeta(path: string) {
+export function pageMeta(path: string, archive?: PublicArchive | null) {
   const segments = path.split("/").filter(Boolean);
   const section = segments[0] || "";
   let name = labels[section] || "Intelligence Archive";
@@ -30,8 +32,28 @@ export function pageMeta(path: string) {
   } else if (labels[section]) {
     description = `Explore ${name.toLowerCase()} in GSN Arena’s GODDESS OF VICTORY: NIKKE intelligence archive.`;
   }
+  let missing = false;
+  let image = `${SITE_URL}/gsn-logo.png`;
+  if (section === "entry" && archive) {
+    const category = segments[1] || "";
+    const entry = isPublicCategory(category)
+      ? archive[category]?.find((row) => row["name"] === name)
+      : undefined;
+    missing = !entry;
+    if (entry) {
+      if (typeof entry["summary"] === "string")
+        description = plainEntryText(entry["summary"]).slice(0, 180) || description;
+      if (typeof entry["image"] === "string" && /^https?:\/\//i.test(entry["image"]))
+        image = entry["image"];
+    }
+  }
+  const noindex =
+    archive === null ||
+    missing ||
+    ["editor", "community-editor"].includes(section) ||
+    (!!section && !labels[section] && section !== "entry");
   const title = `${name} — GSN Arena`;
-  const canonical = `https://gsn-archive.lovable.app${path === "/" ? "/" : "/" + segments.join("/")}`;
+  const canonical = `${SITE_URL}${path === "/" ? "/" : "/" + segments.join("/")}`;
   return {
     meta: [
       { title },
@@ -40,14 +62,12 @@ export function pageMeta(path: string) {
       { property: "og:description", content: description },
       { property: "og:url", content: canonical },
       { property: "og:type", content: "website" },
-      { property: "og:image", content: "https://gsn-archive.lovable.app/gsn-logo.png" },
+      { property: "og:image", content: image },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:title", content: title },
       { name: "twitter:description", content: description },
-      { name: "twitter:image", content: "https://gsn-archive.lovable.app/gsn-logo.png" },
-      ...(["editor", "community-editor"].includes(section)
-        ? [{ name: "robots", content: "noindex, nofollow" }]
-        : []),
+      { name: "twitter:image", content: image },
+      ...(noindex ? [{ name: "robots", content: "noindex, nofollow" }] : []),
     ],
     links: [{ rel: "canonical", href: canonical }],
   };

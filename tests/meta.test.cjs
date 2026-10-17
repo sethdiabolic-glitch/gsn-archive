@@ -1,7 +1,12 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { load } = require("./helpers.cjs");
-const { pageMeta } = load("src/lib/page-meta.ts");
+const { pageMeta } = load("src/lib/page-meta.ts", {
+  "./public-archive": load("src/lib/public-archive.ts"),
+  "./entry-content": load("src/lib/entry-content.ts", {
+    "sanitize-html": require("sanitize-html"),
+  }),
+});
 test("section and dossier metadata are unique and canonical", () => {
   assert.notEqual(pageMeta("/compare").meta[0].title, pageMeta("/characters").meta[0].title);
   const dossier = pageMeta("/entry/characters/Red%20Hood");

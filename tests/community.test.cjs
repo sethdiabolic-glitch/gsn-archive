@@ -9,7 +9,10 @@ const art = {
 const api = (client) =>
   load(
     "src/lib/community.ts",
-    { "@supabase/supabase-js": { createClient: () => client } },
+    {
+      "./gallery": load("src/lib/gallery.ts"),
+      "@supabase/supabase-js": { createClient: () => client },
+    },
     { VITE_SUPABASE_URL: url, VITE_SUPABASE_ANON_KEY: "test-key" },
   );
 function client(removeResult, files = [], deleteResult = { data: [{ id: "art" }] }) {

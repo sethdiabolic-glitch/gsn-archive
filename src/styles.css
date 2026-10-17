@@ -689,3 +689,135 @@ button:disabled { cursor: not-allowed; opacity: .55; }
   .rich-document img[data-float="left"], .rich-document img[data-float="right"] { float: none; max-width: 100%; margin: 1.25em auto; }
   .dossier-profile img { max-width: 100%; max-height: 460px; }
 }
+
+/* Inline archive links and accessible Appendix definitions. */
+.rich-document a.reference-token, .reference-token { color: var(--gold); text-decoration: none; text-underline-offset: 4px; border-bottom: 1px dotted currentColor; padding: 0 1px; background: transparent; font: inherit; cursor: pointer; }
+.reference-token:hover, .rich-document a.reference-token:hover { color: var(--red-bright); border-bottom-style: solid; }
+.reference-definition { border: 0; border-bottom: 1px dashed currentColor; }
+.definition-overlay { position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,.72); backdrop-filter: blur(7px); }
+.definition-card { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 91; width: min(620px, calc(100vw - 32px)); max-height: 85dvh; overflow-y: auto; padding: 28px; border: 1px solid var(--line-bright); border-top: 3px solid var(--gold); border-radius: 8px; background: var(--surface); box-shadow: 0 24px 90px var(--shadow); }
+.definition-card .eyebrow { padding-right: 36px; }
+.definition-title { margin: 15px 36px 20px 0; color: var(--ink); font: 700 32px/1.2 var(--font-display); overflow-wrap: anywhere; }
+.definition-close { position: absolute; right: 14px; top: 14px; padding: 8px; }
+.definition-body { max-height: 50dvh; padding-right: 4px; }
+.definition-open { margin-top: 22px; }
+@media (max-width: 520px) { .definition-card { padding: 22px 18px; } }
+
+/* Entire images fit in the inscribed square of every circular avatar. */
+.dossier-profile { width: min(300px, 78vw); max-width: 100%; aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center; background: radial-gradient(circle, var(--surface-2), var(--void)); }
+.portrait-trigger { width: 100%; height: 100%; display: grid; place-items: center; border: 0; background: transparent; cursor: zoom-in; border-radius: 50%; padding: 0; }
+.dossier-profile .portrait-trigger img { width: 70%; height: 70%; max-width: 70%; max-height: 70%; object-fit: contain; border-radius: 0; }
+.entry-avatar, .tier-avatar, .gsn-av, .profile-circle { display: flex; align-items: center; justify-content: center; }
+.entry-avatar img, .tier-avatar img, .gsn-av img, .profile-circle img { width: 70%; height: 70%; max-width: 70%; max-height: 70%; object-fit: contain; }
+.portrait-lightbox { position: fixed; inset: 5dvh 5vw; z-index: 91; display: flex; align-items: center; justify-content: center; outline: 0; pointer-events: none; }
+.portrait-lightbox > img { max-width: 100%; max-height: 90dvh; object-fit: contain; pointer-events: auto; }
+.portrait-close { position: absolute; right: 0; top: 0; background: var(--surface); pointer-events: auto; }
+
+.gallery-filter-bar { padding: 20px; margin-bottom: 24px; border: 1px solid var(--line-bright); background: var(--surface); border-radius: 8px; }
+.tag-search { min-width: 0; }
+.tag-search > label, .filter-controls label { display: grid; gap: 8px; color: var(--muted); font-size: 12px; }
+.tag-search > .tag-picker { margin-bottom: 12px; }
+.tag-search input { margin-top: 8px; }
+.tag-suggestions { max-height: 240px; overflow-y: auto; padding: 5px; margin-top: 5px; border: 1px solid var(--line); background: var(--surface-2); border-radius: 5px; }
+.tag-suggestions button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 42px; padding: 9px 12px; border: 0; text-align: left; background: none; cursor: pointer; }
+.tag-suggestions button:hover, .tag-suggestions button[aria-selected="true"] { background: var(--surface-3); color: var(--gold); }
+.tag-suggestions button span { color: var(--muted); font-size: 11px; }
+.filter-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
+.filter-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 18px; color: var(--muted); font-size: 12px; }
+.art-grid { align-items: stretch; }
+.art-card { display: flex; flex-direction: column; min-width: 0; border-radius: 6px; }
+.art-open { aspect-ratio: 4 / 3; display: grid; place-items: center; }
+.art-open img { width: 100%; height: 100%; max-height: 100%; object-fit: contain; }
+.art-card-body { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.art-card-title { overflow-wrap: anywhere; line-height: 1.25; }
+.art-card-body > .btn { align-self: flex-start; margin-top: auto !important; }
+
+.editor-section { border: 1px solid var(--line); border-radius: 7px; margin-bottom: 18px; padding: 0 18px 18px; }
+.editor-section > summary { padding: 16px 0; color: var(--gold); cursor: pointer; font: 600 14px var(--font-body); }
+.editor-section:not([open]) { padding-bottom: 0; }
+.editor-section .field { min-width: 0; }
+.dossier-edit-screen .edit-screen-foot { position: sticky; bottom: 0; z-index: 14; padding: 16px; border: 1px solid var(--line-bright); border-radius: 8px; background: var(--overlay); backdrop-filter: blur(14px); box-shadow: 0 -8px 28px var(--shadow); justify-content: space-between; gap: 12px; }
+.edit-screen-foot > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.edit-screen-foot > span, .draft-status { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.reference-picker, .reference-audit { margin: 18px 0; padding: 18px; border: 1px solid var(--line-bright); border-radius: 7px; background: var(--surface); }
+.reference-picker .text-input { margin-top: 12px; }
+.reference-options, .revision-list { max-height: 300px; overflow-y: auto; }
+.reference-options .search-result, .revision-list .search-result { width: 100%; display: flex; flex-wrap: wrap; gap: 12px; }
+.reference-options .search-result > span, .revision-list .search-result > span { color: var(--muted); font-size: 12px; }
+.reference-audit h3, .backlinks h3 { margin: 0 0 12px; color: var(--gold); font-size: 14px; }
+.reference-audit p, .reference-audit li { font-size: 13px; color: var(--muted); line-height: 1.8; }
+.reference-audit ul { list-style: disc; padding-left: 20px; }
+.backlinks { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
+.backlinks ul { display: flex; flex-wrap: wrap; gap: 8px; }
+.backlinks a { display: inline-flex; gap: 10px; padding: 9px 12px; border: 1px solid var(--line-bright); border-radius: 5px; color: var(--gold); font-size: 13px; }
+.backlinks a span { color: var(--muted); font-size: 11px; }
+.feat-source-editor { margin-top: 8px; }
+.feat-source-editor > summary, .feat-evidence > summary { cursor: pointer; color: var(--gold); font: 12px/1.6 var(--font-body); }
+.feat-source-editor label { display: grid; gap: 6px; margin-top: 12px; }
+.feat-source-editor input[type="file"] { max-width: 100%; font-size: 12px; }
+.feat-evidence { margin-top: 14px; font: 12px/1.7 var(--font-body); }
+.feat-evidence strong { display: block; margin-top: 8px; }
+.feat-evidence a { display: block; margin-top: 8px; color: var(--gold); text-decoration: underline; }
+.feat-evidence img { max-width: 100%; max-height: 180px; object-fit: contain; }
+.revision-preview { padding: 18px; margin-top: 18px; border: 1px solid var(--line); border-radius: 6px; }
+.revision-preview h3 { margin-bottom: 16px; font-weight: 600; }
+.revision-preview pre { max-height: 300px; overflow: auto; white-space: pre-wrap; font-size: 11px; }
+@media (max-width: 720px) {
+  .gallery-filter-bar { padding: 14px; }
+  .filter-controls { grid-template-columns: 1fr; }
+  .filter-footer .row-actions { width: auto; }
+  .editor-section { padding-left: 12px; padding-right: 12px; }
+  .dossier-edit-screen .edit-screen-foot { padding: 12px; }
+  .edit-screen-foot > div > button { flex: 1; min-height: 44px; }
+  .reference-options .search-result, .revision-list .search-result { flex-direction: column; align-items: flex-start; }
+}
+/* Fixed media wells align gallery captions while keeping whole images visible. */
+.art-open { position: relative; width: 100%; min-height: 0; flex: none; overflow: hidden; }
+.art-open img { position: absolute; inset: 0; }
+
+/* Optional hypothetical reading, collapsed by default using native details. */
+.hypothetical-summary { max-width: 860px; margin: 30px 0 0; border: 1px solid var(--line-bright); border-radius: 7px; overflow: hidden; }
+.hypothetical-summary > summary { display: flex; align-items: center; gap: 12px; min-height: 54px; padding: 15px 18px; list-style: none; cursor: pointer; color: var(--gold); background: linear-gradient(100deg, rgba(212,184,106,.13), var(--surface)); font: 600 14px/1.5 var(--font-body); }
+.hypothetical-summary > summary::-webkit-details-marker { display: none; }
+.hypothetical-summary > summary::before { content: '›'; font-size: 23px; line-height: 1; transition: transform .2s; }
+.hypothetical-summary[open] > summary::before { transform: rotate(90deg); }
+.hypothetical-summary > summary:hover { background: color-mix(in srgb, var(--gold) 15%, var(--surface)); }
+.hypothetical-summary > summary:focus-visible { outline-offset: -4px; }
+.disclosure-hint { margin-left: auto; color: var(--muted); font: 10px var(--font-mono); }
+.hypothetical-summary .when-open { display: none; }
+.hypothetical-summary[open] .when-open { display: inline; }
+.hypothetical-summary[open] .when-closed { display: none; }
+.dossier .hypothetical-summary .hypothesis { margin: 0; padding: 20px; border-left: 0; border-top: 1px solid var(--line); max-width: none; }
+@media (max-width: 520px) { .disclosure-hint { font-size: 9px; } .hypothetical-summary > summary { padding: 14px 12px; gap: 8px; } .dossier .hypothetical-summary .hypothesis { padding: 16px 12px; } }
+
+/* Dedicated, shareable image pages with actions below the uncropped image. */
+.image-view-page { min-height: 100dvh; padding: 0 24px 48px; }
+.image-view-header { max-width: 1200px; margin: 0 auto; min-height: 76px; display: flex; align-items: center; justify-content: space-between; gap: 18px; border-bottom: 1px solid var(--line); }
+.image-view-header .back-link { margin: 0; }
+.image-view-brand { font: 800 20px var(--font-display); letter-spacing: .15em; white-space: nowrap; }
+.image-view-brand span { color: var(--red-bright); }
+.image-view-main { max-width: 1200px; margin: 30px auto 0; }
+.image-view-main > h1 { margin: 14px 0 8px; color: var(--ink); font: 700 clamp(26px, 4vw, 44px)/1.2 var(--font-display); overflow-wrap: anywhere; }
+.image-credit { color: var(--muted); margin: 0 0 20px; font-size: 13px; }
+.image-view-stage { position: relative; display: flex; align-items: center; justify-content: center; min-height: 240px; margin: 24px 0; padding: 18px; border: 1px solid var(--line-bright); border-radius: 8px; background: rgba(0,0,0,.4); }
+.image-view-stage > img { display: block; width: auto; height: auto; max-width: 100%; max-height: 70dvh; object-fit: contain; }
+.image-load-message { position: absolute; padding: 12px; color: var(--muted); font-size: 13px; text-align: center; }
+.image-view-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.image-view-actions > .btn { min-height: 44px; }
+.image-action-status { margin: 18px 0 10px; color: var(--gold); font-size: 13px; line-height: 1.7; }
+.image-rights-note { margin-top: 20px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.image-copy-field { max-width: 800px; }
+.image-view-link, .summary-image-link, .portrait-trigger { cursor: zoom-in; }
+.dossier-images .image-view-link { display: block; }
+.rich-document a.summary-image-link { display: block; width: fit-content; max-width: 100%; margin: 1.25em auto; border: 0; text-decoration: none; }
+.rich-document a.summary-image-link.float-left { float: left; max-width: 45%; margin: .35em 1.4em 1em 0; }
+.rich-document a.summary-image-link.float-right { float: right; max-width: 45%; margin: .35em 0 1em 1.4em; }
+.rich-document a.summary-image-link img { display: block; float: none; max-width: 100%; height: auto; margin: 0; }
+@media (max-width: 720px) {
+  .image-view-page { padding: 0 16px 32px; }
+  .image-view-header { min-height: 66px; }
+  .image-view-brand { font-size: 16px; }
+  .image-view-stage { padding: 8px; }
+  .image-view-actions > .btn { flex: 1 1 calc(50% - 12px); }
+  .rich-document a.summary-image-link.float-left, .rich-document a.summary-image-link.float-right { float: none; max-width: 100%; margin: 1.25em auto; }
+}
