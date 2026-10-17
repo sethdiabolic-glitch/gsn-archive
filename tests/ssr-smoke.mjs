@@ -52,6 +52,7 @@ try {
   assert.ok(html.includes("Unique SSR evidence"));
   assert.ok(html.includes("Unique hypothetical evidence remains in HTML."));
   assert.ok(html.includes("Hypothetical Summary"));
+  assert.ok(html.includes('href="/comments/test"'));
   assert.ok(!html.includes("DO-NOT-PUBLISH-THIS"));
   assert.ok(!html.includes("Loading <!-- -->archive"));
   const category = await (await nativeFetch(`${origin}/characters`)).text();
@@ -78,6 +79,18 @@ try {
   const matureViewer = await (await nativeFetch(imageUrl + "&mature=1")).text();
   assert.ok(matureViewer.includes("View mature image"));
   assert.ok(!matureViewer.includes("<img"));
+  for (const path of [
+    "/profile",
+    "/notifications",
+    "/notices",
+    "/comments/00000000-0000-4000-8000-000000000010",
+  ]) {
+    const response = await nativeFetch(origin + path);
+    const accountHtml = await response.text();
+    assert.equal(response.status, 200);
+    assert.ok(accountHtml.includes("noindex"));
+    assert.ok(!accountHtml.includes("DO-NOT-PUBLISH-THIS"));
+  }
   console.log(
     "Raw HTTP checks passed: full dossier + collapsed hypothesis in initial HTML, native category links, individual-entry sitemap, no private settings in SSR/feeds, and 503/noindex on outage.",
   );
