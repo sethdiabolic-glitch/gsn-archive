@@ -1,3 +1,4 @@
+import { uniqueTags } from './gallery';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 export type ArtworkStatus = 'pending' | 'approved' | 'rejected';
@@ -60,7 +61,7 @@ export async function submitArt(input: { title: string; artist_name: string; des
   const { error: uploadError } = await supabase.storage.from('community-art').upload(path, input.file, { upsert: false });
   if (uploadError) throw new Error(uploadError.message);
   const { data: publicData } = supabase.storage.from('community-art').getPublicUrl(path);
-  const { error } = await supabase.from('artworks').insert({ title: input.title, artist_name: input.artist_name, description: input.description, rating: input.rating, image_url: publicData.publicUrl, status: 'pending', user_id: user.id, tags: input.tags || [] });
+  const { error } = await supabase.from('artworks').insert({ title: input.title, artist_name: input.artist_name, description: input.description, rating: input.rating, image_url: publicData.publicUrl, status: 'pending', user_id: user.id, tags: uniqueTags(input.tags || []) });
   if (error) {
     const { error: cleanupError } = await supabase.storage.from('community-art').remove([path]);
     if (cleanupError) throw new Error('Submission failed and the uploaded file could not be cleaned up. Please contact an admin.');

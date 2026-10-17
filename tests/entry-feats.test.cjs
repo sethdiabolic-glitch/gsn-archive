@@ -31,3 +31,9 @@ test("card feat indicator respects visibility and all measurement types", () => 
 test("blank display labels fall back to a useful default", () => {
   assert.equal(visibleFeats({ ...entry, featLabels: { speed: " " } })[0].label, "Speed");
 });
+
+test("evidence links reject unsafe schemes", () => {
+  const { safeHttpUrl } = load("src/lib/entry-feats.ts");
+  assert.equal(safeHttpUrl("javascript:alert(1)"), undefined);
+  assert.equal(safeHttpUrl("https://example.com/chapter"), "https://example.com/chapter");
+});

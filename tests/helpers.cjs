@@ -3,7 +3,7 @@ const vm = require("node:vm");
 const ts = require("typescript");
 
 // Compile the real source in isolation; only the network client is replaced.
-exports.load = (file, mocks = {}, env = {}) => {
+exports.load = (file, mocks = {}, env = {}, globals = {}) => {
   const source = fs.readFileSync(file, "utf8").replaceAll("import.meta.env", JSON.stringify(env));
   const code = ts.transpileModule(source, {
     compilerOptions: {
@@ -23,6 +23,11 @@ exports.load = (file, mocks = {}, env = {}) => {
         if (name in mocks) return mocks[name];
         throw new Error(`Unexpected dependency: ${name}`);
       },
+      AbortSignal: globalThis.AbortSignal,
+      Response: globalThis.Response,
+      ...globals,
+      URL: globalThis.URL,
+      URLSearchParams: globalThis.URLSearchParams,
       crypto: globalThis.crypto,
       FileReader: globalThis.FileReader,
     },

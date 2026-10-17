@@ -1,4 +1,16 @@
-import { createPortal } from 'react-dom';
+import { ImageViewerLink } from "./ImageViewerLink";
+import type { PublicArchive } from "./lib/public-archive";
+import { HypotheticalSummary } from './HypotheticalSummary';
+import { useEntryDraft } from './useEntryDraft';
+import { draftKey } from './lib/drafts';
+import { RevisionHistory } from './RevisionHistory';
+import { FeatEvidence } from './FeatEvidence';
+import { referenceWarnings } from './lib/reference-tools';
+import { Portrait } from './Portrait';
+import { TagSearch } from './TagSearch';
+import { GalleryFilterBar, useGalleryFilters } from './GalleryFilters';
+import { cleanTag, uniqueTags, tagKey, filterArtworks, defaultGalleryFilters } from './lib/gallery';
+import { ArchiveReferences, ReferenceInline, Backlinks, useArchiveReferences } from './ArchiveReferences';
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { RichEntryEditor } from './RichEntryEditor';
 import { RichDocument } from './RichDocument';
@@ -120,16 +132,16 @@ function iconFor(category: Category) {
   return <Icon size={16} strokeWidth={1.7} />;
 }
 
-function AppContent() {
+function AppContent({ initialArchive }: { initialArchive?: PublicArchive | null | undefined }) {
   const [location, setLocation] = useLocation();
-  const [data, setData] = useState<DatabaseState>(getStoredData);
+  const [data, setData] = useState<DatabaseState>(() => initialArchive ? initialArchive as unknown as DatabaseState : getStoredData());
   // currentUser = anyone signed in (needed to submit community art).
   // mode only becomes 'editor' once that signed-in user is confirmed as an
   // admin by the database — never just because someone is signed in.
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [mode, setMode] = useState<'public' | 'editor'>('public');
-  const [archiveReady, setArchiveReady] = useState(false);
-  const [archiveSource, setArchiveSource] = useState<'remote' | 'cache' | 'unconfigured'>('cache');
+  const [archiveReady, setArchiveReady] = useState(Boolean(initialArchive));
+  const [archiveSource, setArchiveSource] = useState<'remote' | 'cache' | 'unconfigured'>(initialArchive ? 'remote' : 'cache');
   const [archiveRefresh, setArchiveRefresh] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [lastSync, setLastSync] = useState(() => { try { return localStorage.getItem('gsnArenaLastSync') || ''; } catch { return ''; } });
@@ -141,9 +153,10 @@ function AppContent() {
   const [editing, setEditing] = useState<{ category: Category; entry?: Entry } | null>(null);
   const [artworks, setArtworks] = useState<Artwork[]>([]);
   const [artError, setArtError] = useState('');
-  const [terms, setTerms] = useState<LegalTerms>(() => { try { return JSON.parse(localStorage.getItem('gsnArenaTerms') || 'null') || defaultTerms; } catch { return defaultTerms; } });
+  const [artLoading, setArtLoading] = useState(true);
+  const [terms, setTerms] = useState<LegalTerms>(() => { if (!initialArchive) { try { return JSON.parse(localStorage.getItem('gsnArenaTerms') || 'null') || defaultTerms; } catch { return defaultTerms; } } const row = initialArchive['settings']?.find(item => item['name'] === 'terms'); return row && typeof row['content'] === 'string' ? { content: row['content'] } : defaultTerms; });
   const [artRefresh, setArtRefresh] = useState(0);
-  const [imageTags, setImageTags] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('gsnArenaTags') || '[]'); } catch { return []; } });
+  const [imageTags, setImageTags] = useState<string[]>(() => { if (!initialArchive) { try { return JSON.parse(localStorage.getItem('gsnArenaTags') || '[]'); } catch { return []; } } const tags = initialArchive['settings']?.find(item => item['name'] === 'image_tags')?.['tags']; return Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === 'string') : []; });
   useEffect(() => { try { localStorage.setItem('gsnArenaTags', JSON.stringify(imageTags)); } catch {} }, [imageTags]);
   const removeImageTag = async (tag: string) => {
     const next = imageTags.filter((t) => t !== tag);
@@ -151,8 +164,8 @@ function AppContent() {
     catch (error) { setToast(error instanceof Error ? `Tag save failed: ${error.message}` : 'Tag save failed'); }
   };
   const addImageTag = async (tag: string) => {
-    const clean = tag.trim();
-    if (!clean || imageTags.some((t) => t.toLowerCase() === clean.toLowerCase())) return;
+    const clean = cleanTag(tag);
+    if (!clean || imageTags.some((t) => tagKey(t) === tagKey(clean))) return;
     const next = [...imageTags, clean].sort((a, b) => a.localeCompare(b));
     try { if (archiveSource !== 'remote') throw new Error('Reconnect before editing shared tags.'); await saveArchiveEntry('settings', 'image_tags', { name: 'image_tags', tags: next }); setImageTags(next); setToast(`Tag "${clean}" added`); }
     catch (error) { setToast(error instanceof Error ? `Tag save failed: ${error.message}` : 'Tag save failed'); }
@@ -172,7 +185,7 @@ function AppContent() {
       if (remoteTerms?.content) setTerms({ content: remoteTerms.content, updated_at: remoteTerms.updated_at });
       const tagRow = settings.find(item => item.name === 'image_tags') as any;
       const tags = tagRow?.tags ?? tagRow?.data?.tags;
-      if (Array.isArray(tags)) setImageTags(tags);
+      if (Array.isArray(tags)) setImageTags(uniqueTags(tags));
       if (source === 'remote') {
         const now = new Date().toISOString();
         setLastSync(now);
@@ -185,8 +198,9 @@ function AppContent() {
   }, [mode, archiveRefresh]);
   useEffect(() => {
     let cancelled = false;
+    setArtLoading(true);
     getArt().then(next => { if (!cancelled) { setArtworks(next); setArtError(''); } })
-      .catch(() => { if (!cancelled) setArtError('Artwork could not be refreshed. Any artwork still shown may be outdated.'); });
+      .catch(() => { if (!cancelled) setArtError('Artwork could not be refreshed. Any artwork still shown may be outdated.'); }).finally(() => { if (!cancelled) setArtLoading(false); });
     return () => { cancelled = true; };
   }, [artRefresh]);
   useEffect(() => {
@@ -285,15 +299,11 @@ function AppContent() {
   }, [activeEntry, requestedEntry, entryCategory, page, setLocation]);
 
   if (!archiveReady) return <div className="auth-screen"><div className="auth-card"><div className="eyebrow">GSN Arena / uplink</div><h1 className="display-title">Loading <em>archive</em></h1><p className="lede">Connecting to the shared archive…</p></div>
-    <section className="sr-only" aria-label="Archive index">
-      <h2>GSN Arena — community archive for GODDESS OF VICTORY: NIKKE</h2>
-      <p>Full plain-text archive: <a href="/llms.txt">/llms.txt</a></p>
-      {Object.entries(defaultData).filter(([cat]) => cat !== 'settings').map(([cat, items]) => <div key={cat}><h3><a href={`/${cat}`}>{cat}</a></h3><ul>{(items as Array<{ name: string; summary?: string }>).map(it => <li key={it.name}><strong>{it.name}</strong>{it.summary ? `: ${plainEntryText(String(it.summary))}` : ''}</li>)}</ul></div>)}
-    </section>
+
   </div>;
 
   return (
-    <div className="app-shell">
+    <ArchiveReferences entries={allEntries(data).map(({ item, category }) => ({ ...item, category }))} aliases={aliases} navigate={setLocation}><div className="app-shell">
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <button className="sidebar-close" type="button" aria-label="Close navigation" onClick={() => setSidebarOpen(false)}><X size={18} /></button>
         <div className="brand-block">
@@ -348,7 +358,7 @@ function AppContent() {
         </header>
         <main className={`content ${editing ? 'content-editing' : ''}`}>
           {archiveSource !== 'remote' && <div className="notice-box" role="status"><strong>{archiveSource === 'unconfigured' ? 'Shared storage is not configured.' : 'Showing saved or built-in content. Updates could not be loaded.'}</strong><p>{lastSync ? `Last synced: ${new Date(lastSync).toLocaleString()}` : 'No successful sync has been recorded in this browser.'} Publishing is unavailable until the shared archive reconnects.</p><button className="btn" disabled={refreshing} onClick={() => setArchiveRefresh(value => value + 1)}>{refreshing ? 'Connecting…' : 'Retry connection'}</button></div>}
-          {editing ? <EditorModal initial={editing.entry} category={editing.category} onClose={() => setEditing(null)} onSave={saveEntry} /> : <>
+          {editing ? <EditorModal key={`${editing.category}/${editing.entry?.id || editing.entry?.name || 'new'}`} userId={currentUser?.id || 'anonymous'} initial={editing.entry} category={editing.category} onClose={() => setEditing(null)} onSave={saveEntry} /> : <>
           {page === 'home' && <HomePage data={data} navigate={navigate} openEntry={openEntry} />}
           {activeCategory && <CategoryPage category={activeCategory} data={data} openEntry={openEntry} />}
           {page === 'tier-list' && <TierListPage data={data} openEntry={openEntry} />}
@@ -356,7 +366,7 @@ function AppContent() {
           {page === 'terms' && <TermsPage terms={terms} editable={mode === 'editor'} onSave={async (next) => { try { if (archiveSource !== 'remote') throw new Error('Reconnect before publishing terms.'); await saveArchiveEntry('settings', 'terms', next); setTerms(next); setToast('Terms of Use published to the shared archive'); } catch (error) { setToast(error instanceof Error ? `Terms save failed: ${error.message}` : 'Terms save failed'); } }} />}
           {mode === 'editor' && page === 'editor' && <EditorPage tags={imageTags} onAddTag={addImageTag} onRemoveTag={removeImageTag} data={data} onEdit={(category, entry) => setEditing({ category, entry })} onDelete={deleteEntry} onAdd={(category) => setEditing({ category })} />}
           {page === 'community' && artError && <div className="notice-box" role="alert">{artError} <button className="btn" onClick={() => setArtRefresh(value => value + 1)}>Retry</button></div>}
-          {page === 'community' && <CommunityArtPage isAdmin={mode === 'editor'} tags={imageTags} userId={currentUser?.id} onToast={setToast} artworks={artworks} onSubmitted={() => setArtRefresh((v) => v + 1)} />}
+          {page === 'community' && <CommunityArtPage loading={artLoading} loadError={artError} isAdmin={mode === 'editor'} tags={imageTags} userId={currentUser?.id} onToast={setToast} artworks={artworks} onSubmitted={() => setArtRefresh((v) => v + 1)} />}
           {mode === 'editor' && page === 'community-editor' && <CommunityModerationPage onChanged={() => setArtRefresh((v) => v + 1)} />}
           {page === 'entry' && entryCategory && <DossierPage category={entryCategory} name={activeEntry} data={data} onBack={() => window.history.length > 1 ? window.history.back() : navigate('/')} onEdit={mode === 'editor' ? (entry) => setEditing({ category: entryCategory, entry }) : undefined} />}
           {page === 'entry' && !entryCategory && <NotFound navigate={navigate} />}
@@ -368,16 +378,18 @@ function AppContent() {
       <CommsBanner />
       {toast && <div className="toast" role="status" data-testid="status-toast">{toast}</div>}
       {showAuth && <EmailAuthModal onClose={() => setShowAuth(false)} />}
-    </div>
+    </div></ArchiveReferences>
   );
 }
 
 function NavButton({ active, icon, children, onClick, accent, count }: { active: boolean; icon: React.ReactNode; children: React.ReactNode; onClick: () => void; accent?: string; count?: number }) {
-  return <button className={`nav-item ${active ? 'active' : ''}`} type="button" onClick={onClick} aria-current={active ? 'page' : undefined} style={accent ? { '--nav-accent': accent } as React.CSSProperties : undefined} data-testid={`nav-${String(children).toLowerCase().replaceAll(' ', '-')}`}>
+  const destinations: Record<string, string> = { Overview: '/', 'Tier List': '/tier-list', Compare: '/compare', Terms: '/terms', 'Community Art': '/community', Moderation: '/community-editor', 'Database Editor': '/editor', 'Edit Terms': '/terms', Structures: '/infra' };
+  const href = destinations[String(children)] || `/${String(children).toLowerCase()}`;
+  return <a href={href} className={`nav-item ${active ? 'active' : ''}`} onClick={event => { if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); onClick(); }} aria-current={active ? 'page' : undefined} style={accent ? { '--nav-accent': accent } as React.CSSProperties : undefined} data-testid={`nav-${String(children).toLowerCase().replaceAll(' ', '-')}`}>
     <span className="nav-icon">{icon}</span><span className="nav-text">{children}</span>
     {count !== undefined && <span className="nav-count">[ {String(count).padStart(2, '0')} ]</span>}
     <span className="nav-chevron" aria-hidden="true"><ChevronRight size={13} /></span>
-  </button>;
+  </a>;
 }
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -500,10 +512,10 @@ function CategoryPage({ category, data, openEntry }: { category: Category; data:
 }
 
 function EntryCard({ category, entry, color, openEntry }: { category: Category; entry: Entry; color: string; openEntry: (category: Category, name: string) => void }) {
-  return <button className="entry-card" type="button" style={{ '--entry-color': color } as React.CSSProperties} onClick={() => openEntry(category, entry.name)} data-testid={`card-entry-${entry.name.replaceAll(' ', '-').toLowerCase()}`}>
+  return <a className="entry-card" href={`/entry/${category}/${encodeURIComponent(entry.name)}`} style={{ '--entry-color': color } as React.CSSProperties} onClick={event => { if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); openEntry(category, entry.name); }} data-testid={`card-entry-${entry.name.replaceAll(' ', '-').toLowerCase()}`}>
     <div><div className="entry-card-header"><span className="entry-tag">{entry.tag}</span><span className="entry-code">{entry.tier || 'UNRATED'}</span></div><div className="entry-name-row">{entry.image ? <div className="entry-avatar category-glow" style={{ '--profile-glow': `var(--category-${category})` } as React.CSSProperties}><img src={entry.image} alt="" /></div> : null}<div className="entry-name">{entry.name}</div></div><div className="entry-class">{entry.cls}</div><p className="entry-summary">{plainEntryText(entry.summary)}</p></div>
     <div className="entry-foot"><span>{category === 'appendix' ? 'REFERENCE TERM' : isTheory(category) ? 'THEORY FILE' : hasFeatData(entry) ? 'FEAT DATA AVAILABLE' : 'PARTIAL RECORD'}</span><span className="entry-arrow"><ArrowRight size={15} /></span></div>
-  </button>;
+  </a>;
 }
 
 function EmptyState({ text }: { text: string }) {
@@ -603,13 +615,14 @@ function DossierPage({ category, name, data, onBack, onEdit }: { category: Categ
   return <article className="dossier">
     <button className="back-link" type="button" onClick={onBack} data-testid="button-back-dossier"><ArrowLeft size={14} /> Return to {meta.label}</button>
     <div className="dossier-top"><div><div className="dossier-tag" style={{ color: meta.color }}>{entry.tag} / {meta.label}</div><h1 className="dossier-title">{entry.name}</h1><div className="dossier-class">{entry.cls}</div></div><div className="dossier-actions">{onEdit && <button className="btn" type="button" onClick={() => onEdit(entry)} data-testid="button-edit-dossier"><Pencil size={14} /> Edit file</button>}</div></div>
-    {entry.image && <figure className="dossier-profile category-glow" style={{ '--profile-glow': `var(--category-${category})` } as React.CSSProperties}><img src={entry.image} alt={entry.name} /></figure>}
+    {entry.image && <Portrait src={entry.image} name={entry.name} category={category} />}
     <div className="dossier-summary"><EntryBody text={entry.summary} data={data} /></div>
-    {entry.images?.length ? <div className="dossier-images">{(entry.images || []).map((image, index) => <figure key={`${image.url}-${index}`}><img src={image.url} alt={image.alt || entry.name} loading="lazy" /><figcaption>{image.tags?.length ? image.tags.map((tag) => `#${tag}`).join(' ') : 'ARCHIVE IMAGE'}</figcaption></figure>)}</div> : null}
-    {!isTheory(category) && feats.length > 0 && <div className="specs">{feats.map(({ key, label, value }) => <div className="spec" key={key}><div className="spec-label">{label}</div><div className="spec-value">{value}</div></div>)}</div>}
+    {entry.images?.length ? <div className="dossier-images">{(entry.images || []).map((image, index) => <figure key={`${image.url}-${index}`}><ImageViewerLink src={image.url} title={image.alt || `${entry.name} — image ${index + 1}`} back={`/entry/${category}/${encodeURIComponent(entry.name)}`}><img src={image.url} alt={image.alt || entry.name} loading="lazy" /></ImageViewerLink><figcaption>{image.tags?.length ? image.tags.map((tag) => `#${tag}`).join(' ') : 'ARCHIVE IMAGE'}</figcaption></figure>)}</div> : null}
+    {!isTheory(category) && feats.length > 0 && <div className="specs">{feats.map(({ key, label, value, source }) => <div className="spec" key={key}><div className="spec-label">{label}</div><div className="spec-value">{value}</div><FeatEvidence source={source} /></div>)}</div>}
     {entry.extra?.length ? <><div className="block-title">Additional measurements</div><div className="extra-grid">{entry.extra.map((item) => <div className="spec" key={item.label}><div className="spec-label">{item.label}</div><div className="spec-value">{item.value}</div></div>)}</div></> : null}
-    {entry.hypothetical && !isTheory(category) ? <><div className="block-title">Working hypothesis</div><div className="hypothesis"><EntryBody text={entry.hypothetical} data={data} /></div></> : null}
+    {entry.hypothetical && !isTheory(category) ? <HypotheticalSummary key={`${category}/${entry.id || entry.name}`}><EntryBody text={entry.hypothetical} data={data} /></HypotheticalSummary> : null}
     {entry.notes?.length ? <><div className="block-title">Notes</div><div className="archive-notes">{entry.notes.map((note, index) => <div className="archive-note" key={index}><span className="note-marker">{note.marker}</span><div><strong>{note.author || 'Community note'}</strong><p><ReferenceText text={note.text} data={data} /></p></div></div>)}</div></> : null}
+    <Backlinks entry={{ ...entry, category }} />
     <div className="block-title">Record note</div><p style={{ color: 'var(--muted)', font: '12px/1.7 var(--font-mono)' }}>This dossier is a community-maintained interpretation. Approved records can be revised from the database editor.</p>
   </article>;
 }
@@ -663,38 +676,57 @@ function TagPicker({ selected, tags, onChange, onAddTag }: { selected: string[];
   </div>;
 }
 
-function EditorModal({ initial, category, onClose, onSave }: { initial?: Entry | undefined; category: Category; onClose: () => void; onSave: (category: Category, entry: Entry, originalName?: string) => Promise<void> }) {
+function EditorModal({ initial, category, onClose, onSave, userId }: { userId: string; initial?: Entry | undefined; category: Category; onClose: () => void; onSave: (category: Category, entry: Entry, originalName?: string) => Promise<void> }) {
   const [form, setForm] = useState<Entry>(initial ? clone(initial) : { name: '', cls: '', tag: 'LOCAL FILE', summary: '', speed: 'N/A', strength: 'N/A', durability: 'N/A', hypothetical: '', tier: 'Undefined', notes: [], images: [] });
+  const context = useArchiveReferences();
+  const base = useMemo<Entry>(() => initial ? clone(initial) : { name: '', cls: '', tag: 'LOCAL FILE', summary: '', speed: 'N/A', strength: 'N/A', durability: 'N/A', hypothetical: '', tier: 'Undefined', notes: [], images: [] }, [initial]);
   const isEditing = Boolean(initial);
   const [documentField, setDocumentField] = useState<'summary' | 'hypothetical' | null>(null);
   const [saveError, setSaveError] = useState('');
   const [saving, setSaving] = useState(false);
-  const dirty = JSON.stringify(form) !== JSON.stringify(initial || { name: '', cls: '', tag: 'LOCAL FILE', summary: '', speed: 'N/A', strength: 'N/A', durability: 'N/A', hypothetical: '', tier: 'Undefined', notes: [], images: [] });
-  useBlocker({ shouldBlockFn: () => saving || (dirty && !window.confirm('Leave without publishing your dossier changes?')), enableBeforeUnload: dirty });
-  const close = () => { if (!saving && (!dirty || window.confirm('Discard your unsaved dossier changes?'))) onClose(); };
+  const [evidenceBusy, setEvidenceBusy] = useState(false);
+  const dirty = JSON.stringify(form) !== JSON.stringify(base);
+  const draft = useEntryDraft(draftKey(userId, category, initial?.id || initial?.name || 'new'), base, form, dirty);
+  const issues = referenceWarnings([form.summary, form.hypothetical || '', ...(form.notes || []).map(note => note.text)], context?.entries || [], context?.aliases || [], { name: form.name, category, ...(initial?.id ? { id: initial.id } : {}) });
+  useBlocker({ shouldBlockFn: () => saving || evidenceBusy || (dirty && !window.confirm('Leave without publishing your dossier changes?')), enableBeforeUnload: dirty || evidenceBusy || saving });
+  const close = () => { if (!saving && !evidenceBusy && (!(dirty || draft.candidate) || window.confirm('Discard your unsaved dossier changes and local recovery draft?'))) { draft.clear(); onClose(); } };
   const setField = (key: keyof Entry, value: any) => setForm((previous) => ({ ...previous, [key]: value }));
   const [lines, setLinesState] = useState<(VoiceLine | undefined)[]>(() => entryLines(initial));
   const percents = voicePercents(lines.length);
   const setLines = (next: (VoiceLine | undefined)[]) => { setLinesState(next); setForm((p) => ({ ...p, voices: next.filter((x): x is VoiceLine => !!x?.url), victoryVoice: victoryLine(p), voiceVersion: 2 })); };
   const addNote = () => setField('notes', [...(form.notes || []), { marker: '○', author: 'Community', text: '' }]);
   const updateNote = (index: number, patch: Partial<ArchiveNote>) => setField('notes', (form.notes || []).map((n, i) => i === index ? { ...n, ...patch } : n));
-  const submit = async (event: React.FormEvent) => { event.preventDefault(); if (saving) return; if (!form.name.trim() || !form.cls.trim() || !plainEntryText(form.summary)) { setSaveError('Name, classification and actual summary are required.'); return; } setSaving(true); setSaveError(''); try { await onSave(category, { ...form, name: form.name.trim(), cls: form.cls.trim(), summary: form.summary.trim() }, initial?.name); } catch (error) { setSaveError(error instanceof Error ? error.message : 'Save failed. Your draft has been kept.'); } finally { setSaving(false); } };
-  if (documentField) return <RichEntryEditor key={documentField} title={`${form.name || 'New dossier'} / ${documentField === 'summary' ? 'Actual summary' : 'Hypothetical summary'}`} value={form[documentField] || ''} onBack={() => setDocumentField(null)} onSave={(html) => { setField(documentField, html); setDocumentField(null); }} />;
-  return <form className="dossier-edit-screen" onSubmit={submit}><button className="back-link" type="button" onClick={close} disabled={saving}><ArrowLeft size={14} /> Return to {isEditing ? form.name || 'entry' : 'archive'}</button><div className="edit-screen-head"><div><span className="eyebrow">Archive / dossier editor / {categoryMeta[category].label}</span><h1 className="display-title">{isEditing ? <>Edit <em>{form.name}</em></> : <>New <em>dossier</em></>}</h1></div><button className="btn primary" type="submit" disabled={saving}><Database size={14}/> {saving ? 'Publishing…' : 'Save file'}</button></div><div className="edit-screen-body"><div className="edit-section-label">Identity and classification</div><div className="form-grid">
+  const submit = async (event: React.FormEvent) => { event.preventDefault(); if (saving || evidenceBusy) return; if (draft.candidate) { setSaveError('Choose Recover draft or Discard stored draft before publishing.'); return; } if (!form.name.trim() || !form.cls.trim() || !plainEntryText(form.summary)) { setSaveError('Name, classification and actual summary are required.'); return; } if (issues.length && !window.confirm(`Reference check: ${issues.map(issue => `${issue.name}: ${issue.message}`).join('\n')}\n\nPublish anyway?`)) return; setSaving(true); setSaveError(''); try { await onSave(category, { ...form, name: form.name.trim(), cls: form.cls.trim(), summary: form.summary.trim() }, initial?.name); draft.clear(); } catch (error) { setSaveError(error instanceof Error ? error.message : 'Save failed. Your draft has been kept.'); } finally { setSaving(false); } };
+  if (documentField) return <RichEntryEditor key={documentField} draftStatus={draft.status} onDraftChange={html => { if (!draft.candidate) draft.save({ ...form, [documentField]: html }); }} title={`${form.name || 'New dossier'} / ${documentField === 'summary' ? 'Actual summary' : 'Hypothetical summary'}`} value={form[documentField] || ''} onBack={() => { draft.save(form); setDocumentField(null); }} onSave={(html) => { setField(documentField, html); draft.save({ ...form, [documentField]: html }); setDocumentField(null); }} />;
+  return <form className="dossier-edit-screen" onSubmit={submit}><button className="back-link" type="button" onClick={close} disabled={saving || evidenceBusy}><ArrowLeft size={14} /> Return to {isEditing ? form.name || 'entry' : 'archive'}</button><div className="edit-screen-head"><div><span className="eyebrow">Archive / dossier editor / {categoryMeta[category].label}</span><h1 className="display-title">{isEditing ? <>Edit <em>{form.name}</em></> : <>New <em>dossier</em></>}</h1></div><button className="btn primary" type="submit" disabled={saving || evidenceBusy}><Database size={14}/> {saving ? 'Publishing…' : 'Save file'}</button></div><div className="edit-screen-body">
+    {draft.candidate && <div className="notice-box" role="status"><strong>Unpublished draft found · {new Date(draft.candidate.updatedAt).toLocaleString()}</strong><p>{draft.conflict ? 'The published entry has changed since this draft. Review recovered fields before saving.' : 'Recover your previous editing session, or discard it.'}</p><div className="row-actions"><button type="button" className="btn" onClick={() => { const recovered = draft.candidate!.data; setForm(recovered); setLinesState(entryLines(recovered)); draft.accept(); }}>Recover draft</button><button type="button" className="btn ghost" onClick={draft.clear}>Discard stored draft</button></div></div>}
+    {draft.status && <p className="draft-status" role="status">{draft.status}</p>}
+    <details className="editor-section" open><summary>Identity and classification</summary><div className="form-grid">
     <div className="field"><label>Name</label><input className="text-input" value={form.name} onChange={e => setField('name', e.target.value)} required /></div>
     <div className="field"><label>Classification</label><input className="text-input" value={form.cls} onChange={e => setField('cls', e.target.value)} required /></div>
     <div className="field"><label>File marker</label><input className="text-input" value={form.tag} onChange={e => setField('tag', e.target.value)} /></div>
     {!isTheory(category) && <div className="field"><label>Tier placement</label><select className="select-input" value={form.tier || 'Undefined'} onChange={e => setField('tier', e.target.value)}>{tiers.map(t => <option key={t}>{t}</option>)}</select></div>}
-    <div className="field full summary-field"><label>Actual summary / feats</label><button className="document-launch" type="button" onClick={() => setDocumentField('summary')}><span className="document-launch-icon"><FileText size={20} /></span><span><strong>Open actual summary editor</strong><small>{plainEntryText(form.summary).slice(0, 110) || 'No summary written yet'}</small></span><Pencil size={16}/></button></div>
-    {!isTheory(category) && <><FeatFields value={form} onChange={patch => setForm(previous => ({ ...previous, ...patch }))} />
-    <div className="field full summary-field"><label>Hypothetical summary</label><button className="document-launch" type="button" onClick={() => setDocumentField('hypothetical')}><span className="document-launch-icon"><FileText size={20} /></span><span><strong>Open hypothetical editor</strong><small>{plainEntryText(form.hypothetical || '').slice(0, 110) || 'No hypothesis written yet'}</small></span><Pencil size={16}/></button></div></>}
+    </div></details><details className="editor-section" open><summary>Summaries and optional feats</summary><div className="form-grid">
+    <div className="field full summary-field"><label>Actual summary / feats</label><button className="document-launch" type="button" disabled={Boolean(draft.candidate)} onClick={() => setDocumentField('summary')}><span className="document-launch-icon"><FileText size={20} /></span><span><strong>Open actual summary editor</strong><small>{plainEntryText(form.summary).slice(0, 110) || 'No summary written yet'}</small></span><Pencil size={16}/></button></div>
+    {!isTheory(category) && <><FeatFields value={form} onBusyChange={setEvidenceBusy} onChange={patch => setForm(previous => ({ ...previous, ...(typeof patch === 'function' ? patch(previous) : patch) }))} />
+    <div className="field full summary-field"><label>Hypothetical summary</label><button className="document-launch" type="button" disabled={Boolean(draft.candidate)} onClick={() => setDocumentField('hypothetical')}><span className="document-launch-icon"><FileText size={20} /></span><span><strong>Open hypothetical editor</strong><small>{plainEntryText(form.hypothetical || '').slice(0, 110) || 'No hypothesis written yet'}</small></span><Pencil size={16}/></button></div></>}
+    </div></details><details className="editor-section" open><summary>Images</summary><div className="form-grid">
     <div className="field full"><label>Primary profile image</label><div className="image-pick-row">{form.image ? <img className="image-thumb profile-preview" src={form.image} alt="" /> : null}<ImagePickButton onUrl={(url) => setField('image', url)} />{form.image ? <button type="button" className="btn ghost mini" onClick={() => setField('image', '')}><X size={12}/> Remove</button> : null}</div></div>
+    </div></details><details className="editor-section"><summary>Voice lines</summary><div className="form-grid">
     <div className="field full"><div className="edit-section-label">Voice lines</div><div className="note-guide">Add as many lines as you like. One plays when someone opens this entry — line 1 is the most common and the chances adjust automatically. The victory line plays when this character wins in Compare.</div>
       {lines.map((line, i) => <VoiceSlot key={i} label={`Line ${i + 1} · ${percents[i]}% chance`} value={line} onChange={(v) => setLines(v ? lines.map((x, j) => j === i ? v : x) : lines.filter((_, j) => j !== i))} />)}
       <button type="button" className="btn ghost" onClick={() => setLines([...lines, undefined])}><Plus size={13}/> Add voice line</button>
       {!isTheory(category) && <VoiceSlot label="Victory line · plays on Compare win" value={victoryLine(form)} onChange={(v) => setForm((p) => ({ ...p, voices: lines.filter((x): x is VoiceLine => !!x?.url), victoryVoice: v, voiceVersion: 2 }))} />}</div>
+    </div></details><details className="editor-section"><summary>Notes</summary><div className="form-grid">
     <div className="field full"><div className="editor-section-head"><label>Notes</label><button type="button" className="btn ghost" onClick={addNote}><Plus size={13}/> Add note</button></div><div className="note-guide">Seth marker: ♤ · Community markers: ○ ● □ ♡ ◇ ♧ ☆ ¤</div>{(form.notes || []).map((note, index) => <div className="editor-subrow note-row" key={index}><select className="select-input note-marker-select" value={note.marker} onChange={e => updateNote(index,{marker:e.target.value as NoteMarker})}>{noteMarkers.map(m=><option key={m}>{m}</option>)}</select><input className="text-input" value={note.author} onChange={e => updateNote(index,{author:e.target.value})} placeholder="Author" /><textarea className="text-area" value={note.text} onChange={e => updateNote(index,{text:e.target.value})} placeholder="Note text. Use *Term* for references." /></div>)}</div>
-  </div>{saveError && <div className="form-error" role="alert">{saveError}</div>}</div><div className="edit-screen-foot"><span>Changes are published when you save.</span><div><button className="btn ghost" type="button" onClick={close} disabled={saving}>Cancel</button><button className="btn primary" type="submit" disabled={saving}><Database size={14}/> {saving ? 'Publishing…' : 'Save to archive'}</button></div></div></form>;
+  </div></details>
+    <details className="editor-section"><summary>Revision history</summary><RevisionHistory entryId={initial?.id} onRestore={data => {
+      if (draft.candidate) { setSaveError('Recover or discard the stored draft before restoring a revision.'); return; }
+      if (!['name', 'cls', 'summary', 'speed', 'strength', 'durability'].every(key => typeof data[key] === 'string')) { setSaveError('This revision is missing required entry fields.'); return; }
+      const restored = { ...base, ...data, ...(initial?.id ? { id: initial.id } : {}) } as Entry; setForm(restored); setLinesState(entryLines(restored)); draft.save(restored);
+    }} /></details>
+    <section className="reference-audit" aria-label="Reference check"><h3>Reference check</h3>{issues.length ? <ul>{issues.map(issue => <li key={issue.name}><strong>{issue.name}</strong>: {issue.message}</li>)}</ul> : <p>No unresolved or self-referencing marked names found.</p>}</section>
+    {saveError && <div className="form-error" role="alert">{saveError}</div>}</div><div className="edit-screen-foot"><span>{saving ? 'Publishing…' : dirty ? 'Unsaved changes · not published' : 'No unpublished field changes'}</span><div><button className="btn ghost" type="button" onClick={close} disabled={saving || evidenceBusy}>Cancel</button><button className="btn primary" type="submit" disabled={saving || evidenceBusy}><Database size={14}/> {saving ? 'Publishing…' : 'Save to archive'}</button></div></div></form>;
 }
 
 function EntryBody({ text, data }: { text: string; data: DatabaseState }) {
@@ -702,12 +734,8 @@ function EntryBody({ text, data }: { text: string; data: DatabaseState }) {
   return <div className="rich-document entry-document">{text.split(/\n\n+/).map((paragraph, index) => <p key={index} style={{ whiteSpace: 'pre-line' }}><ReferenceText text={paragraph} data={data} /></p>)}</div>;
 }
 
-function ReferenceText({ text, data }: { text: string; data: DatabaseState }) {
-  const [, setLocation] = useLocation();
-  const [selected, setSelected] = useState<string | null>(null);
-  const parts = text.split(/(\*[^*]+\*)/g);
-  const findTerm = (raw: string) => data.appendix.find(t => t.name.toLowerCase() === raw.toLowerCase());
-  return <>{parts.map((part, i) => { const match = part.match(/^\*([^*]+)\*$/); if (!match) return <span key={i}>{part}</span>; const word = match[1] ?? ''; const dossier = allEntries(data).find(({item}) => item.name.toLowerCase() === word.toLowerCase()); const glossary = findTerm(word); return <button key={i} type="button" className="reference-token" onClick={() => dossier ? setLocation(`/entry/${dossier.category}/${encodeURIComponent(dossier.item.name)}`) : setSelected(word)}>{word}</button>; })}{selected && typeof document !== 'undefined' && createPortal(<div className="reference-popover" onMouseDown={() => setSelected(null)}><div className="reference-card" onMouseDown={e=>e.stopPropagation()}><button className="reference-close" onClick={()=>setSelected(null)}><X size={14}/></button>{(() => { const glossary = findTerm(selected); return glossary ? <><div className="eyebrow">Index reference</div><h3>{glossary.name}</h3><p>{glossary.summary}</p></> : <><div className="eyebrow">Index reference</div><h3>{selected}</h3><p>No matching entry exists yet. Add it to the Appendix to define it.</p></>; })()}</div></div>, document.body)}</>;
+function ReferenceText({ text }: { text: string; data: DatabaseState }) {
+  return <ReferenceInline text={text} />;
 }
 
 function EmailAuthModal({ onClose }: { onClose: () => void }) {
@@ -764,26 +792,24 @@ function TermsPage({ terms, editable, onSave }: { terms: LegalTerms; editable: b
 }
 
 
-function CommunityArtPage({ artworks, onSubmitted, tags, userId, onToast, isAdmin }: { isAdmin: boolean; artworks: Artwork[]; onSubmitted: () => void; tags: string[]; userId?: string | undefined; onToast: (m: string) => void }) {
-  const [tagFilter, setTagFilter] = useState('');
+function CommunityArtPage({ artworks, onSubmitted, tags, userId, onToast, isAdmin, loading, loadError }: { loading: boolean; loadError: string; isAdmin: boolean; artworks: Artwork[]; onSubmitted: () => void; tags: string[]; userId?: string | undefined; onToast: (m: string) => void }) {
+  const { filters, update } = useGalleryFilters();
+  const tab = filters.rating;
+  const setTab = (rating: ArtworkRating) => update({ rating });
   const [deleting, setDeleting] = useState(false);
   const takeDown = async (art: Artwork) => { if (deleting || !window.confirm(`Permanently remove ${art.title} and its image? This cannot be undone.`)) return; setDeleting(true); try { await deleteMyArt(art); onToast('Artwork taken down'); onSubmitted(); } catch (e) { onToast(e instanceof Error ? `Take down failed: ${e.message}` : 'Take down failed'); } finally { setDeleting(false); } };
-  const [tab, setTab] = useState<ArtworkRating>('sfw');
   const [showSubmit, setShowSubmit] = useState(false);
-  const [showNsfwNotice, setShowNsfwNotice] = useState(false);
-  const [sortBy, setSortBy] = useState<'newest' | 'artist' | 'tag'>('newest');
-  const [artistFilter, setArtistFilter] = useState('');
-  const artists = Array.from(new Set(artworks.map((a) => a.artist_name))).sort((a, b) => a.localeCompare(b));
-  const visible = artworks.filter((art) => art.rating === tab && (!tagFilter || (art.tags || []).includes(tagFilter)) && (!artistFilter || art.artist_name === artistFilter)).sort((a, b) => sortBy === 'artist' ? a.artist_name.localeCompare(b.artist_name) : sortBy === 'tag' ? ((a.tags || [])[0] || '~').localeCompare((b.tags || [])[0] || '~') : b.created_at.localeCompare(a.created_at));
+  const [showNsfwNotice, setShowNsfwNotice] = useState(() => filters.rating === 'nsfw');
+  useEffect(() => { if (filters.rating === 'nsfw') setShowNsfwNotice(true); }, [filters.rating]);
+  const visible = filterArtworks(artworks, filters);
   const [showAuth, setShowAuth] = useState(false);
   const signIn = () => { if (supabase) setShowAuth(true); };
   const PER_PAGE = 24;
   const [pageNo, setPageNo] = useState(0);
-  const [viewing, setViewing] = useState<Artwork | null>(null);
-  useEffect(() => setPageNo(0), [tab, tagFilter, artistFilter, sortBy]);
+  useEffect(() => setPageNo(0), [filters]);
   const pages = Math.max(1, Math.ceil(visible.length / PER_PAGE));
   const current = Math.min(pageNo, pages - 1);
-  const shown = visible.slice(current * PER_PAGE, current * PER_PAGE + PER_PAGE);
+  const shown = tab === 'nsfw' && showNsfwNotice ? [] : visible.slice(current * PER_PAGE, current * PER_PAGE + PER_PAGE);
   const goPage = (n: number) => { setPageNo(n); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   return <>
     <div className="eyebrow" style={{ color: '#d93f7a' }}>Community archive / artist submissions</div>
@@ -800,24 +826,21 @@ function CommunityArtPage({ artworks, onSubmitted, tags, userId, onToast, isAdmi
       </div>
     </div>
     {tab === 'nsfw' && <div className="content-warning"><AlertTriangle size={17} /><div><strong>Mature content section</strong><br /><span>This section may contain sexually explicit or otherwise adult artwork submitted by users. By entering this section, you acknowledge the nature of the material and choose to view it.</span></div></div>}
-    {tags.length ? <div className="tag-picker" style={{ marginBottom: 18 }}><button type="button" className={`tag-chip ${!tagFilter ? 'on' : ''}`} onClick={() => setTagFilter('')}>All</button>{tags.map((t) => <button type="button" key={t} className={`tag-chip ${tagFilter === t ? 'on' : ''}`} onClick={() => setTagFilter(tagFilter === t ? '' : t)}>#{t}</button>)}</div> : null}
-    <div className="art-sort-row"><label>Sort <select className="select-input" value={sortBy} onChange={(e) => setSortBy(e.target.value as 'newest' | 'artist' | 'tag')}><option value="newest">Newest</option><option value="artist">Artist (A–Z)</option><option value="tag">Tag (A–Z)</option></select></label><label>Artist <select className="select-input" value={artistFilter} onChange={(e) => setArtistFilter(e.target.value)}><option value="">All artists</option>{artists.map((a) => <option key={a} value={a}>{a}</option>)}</select></label></div>
+    <GalleryFilterBar filters={filters} update={update} tags={tags} artworks={artworks} resultCount={visible.length} />
+    {loading && <p className="note-guide" role="status">Loading artwork…</p>}
     <div className="art-grid">
-      {shown.length ? shown.map((art) => <article className="art-card" key={art.id}><button type="button" className="art-open" onClick={() => setViewing(art)} aria-label={`View ${art.title}`}><img src={art.image_url} alt={art.title} loading="lazy" /></button><div className="art-card-body"><div className="art-card-title">{art.title}</div><div className="art-card-meta">by {art.artist_name}</div>{art.description && <p>{art.description}</p>}{art.tags?.length ? <div className="art-card-meta">{art.tags.map((t) => `#${t}`).join(' ')}</div> : null}{userId && (isAdmin || art.user_id === userId) ? <button type="button" className="btn danger mini" style={{ marginTop: 8 }} disabled={deleting} onClick={() => takeDown(art)}><Trash2 size={12} /> Take down</button> : null}</div></article>) : <EmptyState text="No approved artwork in this section yet." />}
+      {shown.length ? shown.map((art) => <article className="art-card" key={art.id}><ImageViewerLink src={art.image_url} title={art.title} credit={art.artist_name} mature={art.rating === 'nsfw'} className="art-open"><img src={art.image_url} alt={art.title} loading="lazy" /></ImageViewerLink><div className="art-card-body"><div className="art-card-title">{art.title}</div><div className="art-card-meta">by {art.artist_name}</div>{art.description && <p>{art.description}</p>}{art.tags?.length ? <div className="art-card-meta">{art.tags.map((t) => `#${t}`).join(' ')}</div> : null}{userId && (isAdmin || art.user_id === userId) ? <button type="button" className="btn danger mini" style={{ marginTop: 8 }} disabled={deleting} onClick={() => takeDown(art)}><Trash2 size={12} /> Take down</button> : null}</div></article>) : <div className="empty-state"><p>{loading ? 'Loading the gallery…' : loadError && !artworks.length ? 'The gallery could not be loaded. Use Retry above.' : artworks.some(art => art.rating === tab) ? 'No artwork matches these filters. Try Match any or remove a tag.' : 'No approved artwork in this section yet.'}</p>{(filters.tags.length > 0 || filters.artist) && <button className="btn" onClick={() => update({ ...defaultGalleryFilters, rating: tab })}>Clear filters</button>}</div>}
     </div>
     {pages > 1 && <nav className="pager" aria-label="Artwork pages"><button type="button" className="btn ghost mini" disabled={current === 0} onClick={() => goPage(current - 1)}><ArrowLeft size={12} /> Prev</button>{Array.from({ length: pages }, (_, i) => <button type="button" key={i} className={`btn mini ${i === current ? 'primary' : 'ghost'}`} aria-current={i === current ? 'page' : undefined} onClick={() => goPage(i)}>{i + 1}</button>)}<button type="button" className="btn ghost mini" disabled={current >= pages - 1} onClick={() => goPage(current + 1)}>Next <ArrowRight size={12} /></button></nav>}
-    {viewing && <div className="lightbox" role="dialog" aria-label={viewing.title} onClick={() => setViewing(null)}><figure onClick={(e) => e.stopPropagation()}><button type="button" className="lightbox-close" aria-label="Close" onClick={() => setViewing(null)}><X size={18} /></button><img src={viewing.image_url} alt={viewing.title} /><figcaption><strong>{viewing.title}</strong><span>by {viewing.artist_name}{viewing.tags?.length ? ` · ${viewing.tags.map((t) => `#${t}`).join(' ')}` : ''}</span>{viewing.description && <p>{viewing.description}</p>}</figcaption></figure></div>}
+
     {showSubmit && <ArtworkSubmitModal tags={tags} onClose={() => setShowSubmit(false)} onSubmitted={() => { setShowSubmit(false); onSubmitted(); }} />}
     {showAuth && <EmailAuthModal onClose={() => setShowAuth(false)} />}
-    {showNsfwNotice && <div className="modal-backdrop"><div className="warning-modal"><AlertTriangle size={28} /><h2>Mature content ahead</h2><p>This section is reserved for adult/NSFW artwork. Nothing here is presented as part of the core lore archive. If you do not want to view mature material, choose General instead.</p><button className="btn primary" onClick={() => setShowNsfwNotice(false)}>I understand</button></div></div>}
+    {showNsfwNotice && <div className="modal-backdrop"><div className="warning-modal"><AlertTriangle size={28} /><h2>Mature content ahead</h2><p>This section is reserved for adult/NSFW artwork. Nothing here is presented as part of the core lore archive. If you do not want to view mature material, choose General instead.</p><div className="row-actions"><button className="btn ghost" onClick={() => { setTab('sfw'); setShowNsfwNotice(false); }}>Back to General</button><button className="btn primary" onClick={() => setShowNsfwNotice(false)}>I understand</button></div></div></div>}
   </>;
 }
 
 function HashTagInput({ tags, value, onChange }: { tags: string[]; value: string[]; onChange: (v: string[]) => void }) {
-  const [q, setQ] = useState('');
-  const open = q.startsWith('#');
-  const matches = tags.filter((t) => !value.includes(t) && t.toLowerCase().includes(q.slice(1).toLowerCase())).slice(0, 8);
-  return <div className="hash-input"><div className="tag-picker">{value.map((t) => <button type="button" key={t} className="tag-chip on" onClick={() => onChange(value.filter((x) => x !== t))}>#{t} ×</button>)}</div><input className="text-input" value={q} placeholder="Type # to add tags" onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && open && matches[0]) { e.preventDefault(); onChange([...value, matches[0]]); setQ(''); } }} />{open && <div className="hash-menu">{matches.length ? matches.map((t) => <button type="button" key={t} onClick={() => { onChange([...value, t]); setQ(''); }}>#{t}</button>) : <span className="tag-empty">No matching tag</span>}</div>}</div>;
+  return <TagSearch tags={tags} selected={value} onChange={onChange} />;
 }
 
 function ArtworkSubmitModal({ onClose, onSubmitted, tags }: { onClose: () => void; onSubmitted: () => void; tags: string[] }) {
@@ -838,7 +861,7 @@ function ArtworkSubmitModal({ onClose, onSubmitted, tags }: { onClose: () => voi
     catch (err) { setError(err instanceof Error ? err.message : 'Upload failed.'); }
     finally { setBusy(false); }
   };
-  return <div className="modal-backdrop"><form className="modal" onSubmit={submit}><div className="modal-head"><h2>Submit community artwork</h2><button className="btn ghost" type="button" onClick={onClose}><X size={17} /></button></div><div className="modal-body"><div className="upload-note"><strong>Up to 13 images.</strong> Each image can have its own tags — type # to search them. Submissions wait for moderation.</div><div className="form-grid"><div className="field"><label>Artwork title</label><input className="text-input" value={title} onChange={e => setTitle(e.target.value)} required /></div><div className="field"><label>Artist username</label><input className="text-input" value={artist} onChange={e => setArtist(e.target.value)} required /></div><div className="field full"><label>Images ({items.length}/13)</label><input className="text-input" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif" disabled={items.length >= 13} onChange={e => { addFiles(e.target.files); e.target.value = ''; }} /></div>{items.map((it, i) => <div className="field full batch-item" key={it.url}><img src={it.url} alt="" /><div style={{ flex: 1, display: 'grid', gap: 8 }}><input className="text-input" value={it.title} placeholder={`Title for image ${i + 1}`} aria-label={`Title for image ${i + 1}`} onChange={(e) => setItems(items.map((x, j) => j === i ? { ...x, title: e.target.value } : x))} /><HashTagInput tags={tags} value={it.tags} onChange={(v) => setItems(items.map((x, j) => j === i ? { ...x, tags: v } : x))} /></div><button type="button" className="btn ghost mini" onClick={() => setItems(items.filter((_, j) => j !== i))}><X size={12} /></button></div>)}<div className="field"><label>Section</label><select className="select-input" value={rating} onChange={e => setRating(e.target.value as ArtworkRating)}><option value="sfw">General</option><option value="nsfw">Mature / NSFW</option></select></div><div className="field full"><label>Description</label><textarea className="text-area" value={description} onChange={e => setDescription(e.target.value)} placeholder="Optional context or caption" /></div></div>{error && <div className="form-error">{error}</div>}</div><div className="modal-foot"><button className="btn ghost" type="button" onClick={onClose}>Cancel</button><button className="btn primary" type="submit" disabled={busy}>{busy ? 'Uploading…' : `Submit ${items.length || ''} for review`}</button></div></form></div>;
+  return <div className="modal-backdrop"><form className="modal" onSubmit={submit}><div className="modal-head"><h2>Submit community artwork</h2><button className="btn ghost" type="button" onClick={onClose}><X size={17} /></button></div><div className="modal-body"><div className="upload-note"><strong>Up to 13 images.</strong> Each image can have its own tags — type a word or #tag to search. Submissions wait for moderation.</div><div className="form-grid"><div className="field"><label>Artwork title</label><input className="text-input" value={title} onChange={e => setTitle(e.target.value)} required /></div><div className="field"><label>Artist username</label><input className="text-input" value={artist} onChange={e => setArtist(e.target.value)} required /></div><div className="field full"><label>Images ({items.length}/13)</label><input className="text-input" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif" disabled={items.length >= 13} onChange={e => { addFiles(e.target.files); e.target.value = ''; }} /></div>{items.map((it, i) => <div className="field full batch-item" key={it.url}><img src={it.url} alt="" /><div style={{ flex: 1, display: 'grid', gap: 8 }}><input className="text-input" value={it.title} placeholder={`Title for image ${i + 1}`} aria-label={`Title for image ${i + 1}`} onChange={(e) => setItems(items.map((x, j) => j === i ? { ...x, title: e.target.value } : x))} /><HashTagInput tags={tags} value={it.tags} onChange={(v) => setItems(items.map((x, j) => j === i ? { ...x, tags: v } : x))} /></div><button type="button" className="btn ghost mini" onClick={() => setItems(items.filter((_, j) => j !== i))}><X size={12} /></button></div>)}<div className="field"><label>Section</label><select className="select-input" value={rating} onChange={e => setRating(e.target.value as ArtworkRating)}><option value="sfw">General</option><option value="nsfw">Mature / NSFW</option></select></div><div className="field full"><label>Description</label><textarea className="text-area" value={description} onChange={e => setDescription(e.target.value)} placeholder="Optional context or caption" /></div></div>{error && <div className="form-error">{error}</div>}</div><div className="modal-foot"><button className="btn ghost" type="button" onClick={onClose}>Cancel</button><button className="btn primary" type="submit" disabled={busy}>{busy ? 'Uploading…' : `Submit ${items.length || ''} for review`}</button></div></form></div>;
 }
 
 function CommunityModerationPage({ onChanged }: { onChanged: () => void }) {
@@ -861,8 +884,8 @@ function NotFound({ navigate }: { navigate: (path: string) => void }) {
   return <div className="empty-state"><FolderArchive size={30} /><div style={{ font: '700 28px var(--font-display)', color: 'var(--ink)', textTransform: 'uppercase', marginBottom: 8 }}>File not found</div><div>The requested archive path does not exist.</div><button className="btn primary" type="button" onClick={() => navigate('/')} style={{ marginTop: 20 }} data-testid="button-return-overview">Return to overview</button></div>;
 }
 
-export function GsnArenaApp() {
-  return <AppContent />;
+export function GsnArenaApp({ initialArchive }: { initialArchive?: PublicArchive | null | undefined }) {
+  return <AppContent initialArchive={initialArchive} />;
 }
 
 function App() {
