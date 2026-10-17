@@ -1,5 +1,6 @@
 export type ImageView = {
   src: string;
+  art?: string;
   title: string;
   credit: string;
   back: string;
@@ -37,6 +38,9 @@ export function safeImageBack(value: unknown): string {
 export function imageSearch(search: Record<string, unknown>): ImageView {
   return {
     src: safeImageSource(search["src"]),
+    ...(typeof search["art"] === "string" && /^[0-9a-f-]{36}$/i.test(search["art"])
+      ? { art: search["art"] }
+      : {}),
     title: typeof search["title"] === "string" ? search["title"].slice(0, 250) : "Archive image",
     credit: typeof search["credit"] === "string" ? search["credit"].slice(0, 200) : "",
     back: safeImageBack(search["back"]),

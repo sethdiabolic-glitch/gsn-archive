@@ -1,3 +1,5 @@
+import { loadProfile } from "./lib/member";
+import { AccountMenu, ProfilePage, NotificationsPage, CommentsPage, NoticeCard, NoticesAdmin, LoginRequired, ModerationPage } from "./MemberArea";
 import { ImageViewerLink } from "./ImageViewerLink";
 import type { PublicArchive } from "./lib/public-archive";
 import { HypotheticalSummary } from './HypotheticalSummary';
@@ -11,7 +13,7 @@ import { TagSearch } from './TagSearch';
 import { GalleryFilterBar, useGalleryFilters } from './GalleryFilters';
 import { cleanTag, uniqueTags, tagKey, filterArtworks, defaultGalleryFilters } from './lib/gallery';
 import { ArchiveReferences, ReferenceInline, useArchiveReferences } from './ArchiveReferences';
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { RichEntryEditor } from './RichEntryEditor';
 import { RichDocument } from './RichDocument';
 import { FeatFields } from './FeatFields';
@@ -19,12 +21,12 @@ import { visibleFeats, hasFeatData, type EntryFeats } from './lib/entry-feats';
 import { CommsBanner, MuteToggle, playVoice, rollVoice, entryLines, victoryLine, voicePercents, type VoiceLine } from './VoiceComms';
 import { isEntryHtml, plainEntryText } from './lib/entry-content';
 import { useNavigate, useRouterState, useBlocker } from '@tanstack/react-router';
-import { getArt, getPendingArt, isGsnAdmin, setArtStatus, submitArtBatch, supabase, uploadArchiveImage, uploadArchiveFile, deleteMyArt, type Artwork, type ArtworkRating } from './lib/community';
+import { getArt, isGsnAdmin, submitArtBatch, supabase, uploadArchiveImage, uploadArchiveFile, type Artwork, type ArtworkRating } from './lib/community';
 import { deleteArchiveEntry, loadArchive, saveArchiveEntry, loadArchiveAliases } from './lib/archive';
 import {
   Archive, ArrowLeft, ArrowRight, BookOpen, ChevronRight, CircleDot, Database,
   FileText, FolderArchive, Gauge, GitCompare, Layers3, Menu, Pencil, Plus, Palette,
-  Radar, ScanSearch, Lightbulb, Search, Shield, Swords, Trash2, X, Image, Upload, Check, Ban, AlertTriangle, LogIn,
+  Radar, ScanSearch, Lightbulb, Search, Shield, Swords, Trash2, X, Image, Upload, Check, AlertTriangle, LogIn,
 } from 'lucide-react';
 
 type Category = 'characters' | 'heretics' | 'raptures' | 'infra' | 'weapons' | 'theories' | 'appendix';
@@ -205,19 +207,20 @@ function AppContent({ initialArchive }: { initialArchive?: PublicArchive | null 
   }, [artRefresh]);
   useEffect(() => {
     if (!supabase) return;
-    const applySession = async (user: any) => {
+    let active=true, request=0, identity:string|null=null;
+    const applySession = (user: any) => {
+      if(!active)return;
+      const generation=++request;
       setCurrentUser(user || null);
-      if (!user) { setMode('public'); return; }
-      try {
-        const admin = await isGsnAdmin();
-        setMode(admin ? 'editor' : 'public');
-      } catch {
-        setMode('public');
-      }
+      if(!user || identity!==user.id)setMode('public');
+      identity=user?.id||null;
+      if(!user)return;
+      // Auth callbacks run under Supabase's session lock. Defer calls that need that lock.
+      setTimeout(()=>{if(active)void isGsnAdmin().then(admin=>{if(active&&generation===request)setMode(admin?'editor':'public');}).catch(()=>{if(active&&generation===request)setMode('public');});},0);
     };
-    supabase.auth.getUser().then(({ data: auth }) => applySession(auth.user));
+    supabase.auth.getUser().then(({ data: auth }) => {if(active)applySession(auth.user);});
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => applySession(session?.user));
-    return () => listener.subscription.unsubscribe();
+    return () => {active=false;request++;listener.subscription.unsubscribe();};
   }, []);
   const [showAuth, setShowAuth] = useState(false);
   const signInAsAdmin = () => {
@@ -274,8 +277,8 @@ function AppContent({ initialArchive }: { initialArchive?: PublicArchive | null 
   const parsed = location.split('/').filter(Boolean);
   const requestedPage = parsed[0] || 'home';
   const allowedPages = mode === 'editor'
-    ? ['home', 'tier-list', 'compare', 'terms', 'editor', 'community', 'community-editor', 'entry', ...categories]
-    : ['home', 'tier-list', 'compare', 'terms', 'community', 'entry', ...categories];
+    ? ['home', 'tier-list', 'compare', 'terms', 'editor', 'community', 'community-editor', 'notices', 'profile', 'notifications', 'comments', 'entry', ...categories]
+    : ['home', 'tier-list', 'compare', 'terms', 'community', 'profile', 'notifications', 'comments', 'entry', ...categories];
   const page = allowedPages.includes(requestedPage) ? requestedPage : (mode === 'editor' ? 'editor' : 'home');
   const activeCategory = categories.includes(page as Category) ? page as Category : null;
   const requestedEntry = page === 'entry' ? (() => { try { return decodeURIComponent(parsed.slice(2).join('/')); } catch { return ''; } })() : '';
@@ -290,7 +293,7 @@ function AppContent({ initialArchive }: { initialArchive?: PublicArchive | null 
           page === 'editor' ? 'Archive database' :
           page === 'community' ? 'Community art' :
             page === 'community-editor' ? 'Community moderation' :
-              page === 'entry' ? 'Dossier' : activeCategory ? categoryMeta[activeCategory].label : 'Archive';
+              page === 'profile' ? 'Profile' : page === 'notifications' ? 'Notifications' : page === 'comments' ? 'Discussion' : page === 'notices' ? 'Notices' : page === 'entry' ? 'Dossier' : activeCategory ? categoryMeta[activeCategory].label : 'Archive';
 
   useEffect(() => {
     if (page === 'entry' && activeEntry !== requestedEntry && entryCategory) {
@@ -329,10 +332,11 @@ function AppContent({ initialArchive }: { initialArchive?: PublicArchive | null 
             <div className="nav-label" style={{ marginTop: 18 }}>Community</div>
             <NavButton active={page === 'community'} icon={<Image size={16} />} onClick={() => navigate('/community')}>Community Art</NavButton>
           </>}
+          {currentUser && <><div className="nav-label">Your console</div><NavButton active={page === 'profile'} icon={<Image size={16}/>} onClick={() => navigate('/profile')}>Profile / My Images</NavButton><NavButton active={page === 'notifications'} icon={<CircleDot size={16}/>} onClick={() => navigate('/notifications')}>Notifications</NavButton></>}
           {mode === 'editor' && <>
             <div className="nav-label" style={{ marginTop: 18 }}>Community</div>
             <NavButton active={page === 'community'} icon={<Image size={16} />} onClick={() => navigate('/community')}>Community Art</NavButton>
-            <NavButton active={page === 'community-editor'} icon={<Check size={16} />} onClick={() => navigate('/community-editor')}>Moderation</NavButton>
+            <NavButton active={page === 'notices'} icon={<FileText size={16}/>} onClick={() => navigate('/notices')}>Notices</NavButton><NavButton active={page === 'community-editor'} icon={<Check size={16} />} onClick={() => navigate('/community-editor')}>Moderation</NavButton>
             <div className="nav-label" style={{ marginTop: 18 }}>Maintenance</div>
             <NavButton active={page === 'editor'} icon={<Database size={16} />} onClick={() => navigate('/editor')}>Database Editor</NavButton>
             <NavButton active={page === 'terms'} icon={<FileText size={16} />} onClick={() => navigate('/terms')}>Edit Terms</NavButton>
@@ -354,11 +358,15 @@ function AppContent({ initialArchive }: { initialArchive?: PublicArchive | null 
         <header className="topbar">
           <div className="crumb"><span>GSN /</span><strong>{currentTitle}</strong></div>
           <button className="search-trigger" type="button" data-testid="button-search-archive" onClick={() => setSearchOpen(true)}><Search size={15} /><span>Search the archive</span><kbd>⌘ K</kbd></button>
-          <MuteToggle />
+          <MuteToggle /><AccountMenu key={currentUser?.id || "guest"} user={currentUser} onSignIn={signInAsAdmin} onSignOut={signOut} />
         </header>
-        <main className={`content ${editing ? 'content-editing' : ''}`}>
+        <main className={`content ${editing ? 'content-editing' : ''}`}><NoticeCard />
           {archiveSource !== 'remote' && <div className="notice-box" role="status"><strong>{archiveSource === 'unconfigured' ? 'Shared storage is not configured.' : 'Showing saved or built-in content. Updates could not be loaded.'}</strong><p>{lastSync ? `Last synced: ${new Date(lastSync).toLocaleString()}` : 'No successful sync has been recorded in this browser.'} Publishing is unavailable until the shared archive reconnects.</p><button className="btn" disabled={refreshing} onClick={() => setArchiveRefresh(value => value + 1)}>{refreshing ? 'Connecting…' : 'Retry connection'}</button></div>}
           {editing ? <EditorModal key={`${editing.category}/${editing.entry?.id || editing.entry?.name || 'new'}`} userId={currentUser?.id || 'anonymous'} initial={editing.entry} category={editing.category} onClose={() => setEditing(null)} onSave={saveEntry} /> : <>
+          {page === 'profile' && (currentUser ? <ProfilePage key={currentUser.id} user={currentUser} onChanged={() => setArtRefresh(v=>v+1)}><ProfileSubmission tags={imageTags} onSubmitted={() => setArtRefresh(v=>v+1)}/></ProfilePage> : <LoginRequired onSignIn={signInAsAdmin}/>)}
+          {page === 'notifications' && (currentUser ? <NotificationsPage key={currentUser.id}/> : <LoginRequired onSignIn={signInAsAdmin}/>)}
+          {page === 'comments' && <CommentsPage key={`${parsed[1]}/${currentUser?.id || 'guest'}`} entryId={parsed[1] || ''} user={currentUser} isAdmin={mode === 'editor'} onSignIn={signInAsAdmin}/>}
+          {page === 'notices' && mode === 'editor' && <NoticesAdmin/>}
           {page === 'home' && <HomePage data={data} navigate={navigate} openEntry={openEntry} />}
           {activeCategory && <CategoryPage category={activeCategory} data={data} openEntry={openEntry} />}
           {page === 'tier-list' && <TierListPage data={data} openEntry={openEntry} />}
@@ -622,6 +630,7 @@ function DossierPage({ category, name, data, onBack, onEdit }: { category: Categ
     {entry.extra?.length ? <><div className="block-title">Additional measurements</div><div className="extra-grid">{entry.extra.map((item) => <div className="spec" key={item.label}><div className="spec-label">{item.label}</div><div className="spec-value">{item.value}</div></div>)}</div></> : null}
     {entry.hypothetical && !isTheory(category) ? <HypotheticalSummary key={`${category}/${entry.id || entry.name}`}><EntryBody text={entry.hypothetical} data={data} /></HypotheticalSummary> : null}
     {entry.notes?.length ? <><div className="block-title">Notes</div><div className="archive-notes">{entry.notes.map((note, index) => <div className="archive-note" key={index}><span className="note-marker">{note.marker}</span><div><strong>{note.author || 'Community note'}</strong><p><ReferenceText text={note.text} data={data} /></p></div></div>)}</div></> : null}
+    {entry.id && <a className="comment-section-link" href={`/comments/${entry.id}`}>》Comment section <MessageCount entryId={entry.id}/> <ArrowRight size={18}/></a>}
     <div className="block-title">Record note</div><p style={{ color: 'var(--muted)', font: '12px/1.7 var(--font-mono)' }}>This dossier is a community-maintained interpretation. Approved records can be revised from the database editor.</p>
   </article>;
 }
@@ -795,9 +804,7 @@ function CommunityArtPage({ artworks, onSubmitted, tags, userId, onToast, isAdmi
   const { filters, update } = useGalleryFilters();
   const tab = filters.rating;
   const setTab = (rating: ArtworkRating) => update({ rating });
-  const [deleting, setDeleting] = useState(false);
-  const takeDown = async (art: Artwork) => { if (deleting || !window.confirm(`Permanently remove ${art.title} and its image? This cannot be undone.`)) return; setDeleting(true); try { await deleteMyArt(art); onToast('Artwork taken down'); onSubmitted(); } catch (e) { onToast(e instanceof Error ? `Take down failed: ${e.message}` : 'Take down failed'); } finally { setDeleting(false); } };
-  const [showSubmit, setShowSubmit] = useState(false);
+  const [, navigate] = useLocation();
   const [showNsfwNotice, setShowNsfwNotice] = useState(() => filters.rating === 'nsfw');
   useEffect(() => { if (filters.rating === 'nsfw') setShowNsfwNotice(true); }, [filters.rating]);
   const visible = filterArtworks(artworks, filters);
@@ -820,19 +827,18 @@ function CommunityArtPage({ artworks, onSubmitted, tags, userId, onToast, isAdmi
         <button className={`btn ${tab === 'nsfw' ? 'primary' : 'ghost'}`} onClick={() => { setTab('nsfw'); setShowNsfwNotice(true); }}>Mature / NSFW</button>
       </div>
       <div className="community-actions">
-        {supabase && <button className="btn ghost" onClick={signIn}><LogIn size={14} /> Sign in</button>}
-        <button className="btn primary" onClick={() => setShowSubmit(true)}><Upload size={14} /> Submit artwork</button>
+        {supabase && !userId && <button className="btn ghost" onClick={signIn}><LogIn size={14} /> Sign in</button>}
+        <button className="btn primary" onClick={() => navigate('/profile')}><Upload size={14} /> Submit artwork</button>
       </div>
     </div>
     {tab === 'nsfw' && <div className="content-warning"><AlertTriangle size={17} /><div><strong>Mature content section</strong><br /><span>This section may contain sexually explicit or otherwise adult artwork submitted by users. By entering this section, you acknowledge the nature of the material and choose to view it.</span></div></div>}
     <GalleryFilterBar filters={filters} update={update} tags={tags} artworks={artworks} resultCount={visible.length} />
     {loading && <p className="note-guide" role="status">Loading artwork…</p>}
     <div className="art-grid">
-      {shown.length ? shown.map((art) => <article className="art-card" key={art.id}><ImageViewerLink src={art.image_url} title={art.title} credit={art.artist_name} mature={art.rating === 'nsfw'} className="art-open"><img src={art.image_url} alt={art.title} loading="lazy" /></ImageViewerLink><div className="art-card-body"><div className="art-card-title">{art.title}</div><div className="art-card-meta">by {art.artist_name}</div>{art.description && <p>{art.description}</p>}{art.tags?.length ? <div className="art-card-meta">{art.tags.map((t) => `#${t}`).join(' ')}</div> : null}{userId && (isAdmin || art.user_id === userId) ? <button type="button" className="btn danger mini" style={{ marginTop: 8 }} disabled={deleting} onClick={() => takeDown(art)}><Trash2 size={12} /> Take down</button> : null}</div></article>) : <div className="empty-state"><p>{loading ? 'Loading the gallery…' : loadError && !artworks.length ? 'The gallery could not be loaded. Use Retry above.' : artworks.some(art => art.rating === tab) ? 'No artwork matches these filters. Try Match any or remove a tag.' : 'No approved artwork in this section yet.'}</p>{(filters.tags.length > 0 || filters.artist) && <button className="btn" onClick={() => update({ ...defaultGalleryFilters, rating: tab })}>Clear filters</button>}</div>}
+      {shown.length ? shown.map((art) => <article className="art-card" key={art.id}><ImageViewerLink src={art.image_url} artworkId={art.id} title={art.title} credit={art.artist_name} mature={art.rating === 'nsfw'} className="art-open"><img src={art.image_url} alt={art.title} loading="lazy" /></ImageViewerLink><div className="art-card-body"><div className="art-card-title">{art.title}</div><div className="art-card-meta">by {art.artist_name}</div>{art.description && <p>{art.description}</p>}{art.tags?.length ? <div className="art-card-meta">{art.tags.map((t) => `#${t}`).join(' ')}</div> : null}{userId && (isAdmin || art.user_id === userId) ? <a className="btn ghost mini" href={isAdmin?'/community-editor':'/profile'}>Manage artwork</a> : null}</div></article>) : <div className="empty-state"><p>{loading ? 'Loading the gallery…' : loadError && !artworks.length ? 'The gallery could not be loaded. Use Retry above.' : artworks.some(art => art.rating === tab) ? 'No artwork matches these filters. Try Match any or remove a tag.' : 'No approved artwork in this section yet.'}</p>{(filters.tags.length > 0 || filters.artist) && <button className="btn" onClick={() => update({ ...defaultGalleryFilters, rating: tab })}>Clear filters</button>}</div>}
     </div>
     {pages > 1 && <nav className="pager" aria-label="Artwork pages"><button type="button" className="btn ghost mini" disabled={current === 0} onClick={() => goPage(current - 1)}><ArrowLeft size={12} /> Prev</button>{Array.from({ length: pages }, (_, i) => <button type="button" key={i} className={`btn mini ${i === current ? 'primary' : 'ghost'}`} aria-current={i === current ? 'page' : undefined} onClick={() => goPage(i)}>{i + 1}</button>)}<button type="button" className="btn ghost mini" disabled={current >= pages - 1} onClick={() => goPage(current + 1)}>Next <ArrowRight size={12} /></button></nav>}
 
-    {showSubmit && <ArtworkSubmitModal tags={tags} onClose={() => setShowSubmit(false)} onSubmitted={() => { setShowSubmit(false); onSubmitted(); }} />}
     {showAuth && <EmailAuthModal onClose={() => setShowAuth(false)} />}
     {showNsfwNotice && <div className="modal-backdrop"><div className="warning-modal"><AlertTriangle size={28} /><h2>Mature content ahead</h2><p>This section is reserved for adult/NSFW artwork. Nothing here is presented as part of the core lore archive. If you do not want to view mature material, choose General instead.</p><div className="row-actions"><button className="btn ghost" onClick={() => { setTab('sfw'); setShowNsfwNotice(false); }}>Back to General</button><button className="btn primary" onClick={() => setShowNsfwNotice(false)}>I understand</button></div></div></div>}
   </>;
@@ -842,7 +848,13 @@ function HashTagInput({ tags, value, onChange }: { tags: string[]; value: string
   return <TagSearch tags={tags} selected={value} onChange={onChange} />;
 }
 
+function MessageCount({entryId}: {entryId:string}) { const [count,setCount]=useState<number|null>(null); useEffect(()=>{let stale=false; if(supabase)void supabase.from('entry_comments').select('id',{count:'exact',head:true}).eq('entry_id',entryId).is('deleted_at',null).then(({count,error})=>{if(!stale&&!error)setCount(count);});return()=>{stale=true;};},[entryId]);return count===null?null:<span>· {count}</span>; }
+function ProfileSubmission({tags,onSubmitted}: {tags:string[];onSubmitted:()=>void}) {const [open,setOpen]=useState(false);return <><p>Upload up to 13 images. Submissions stay private until approved. Artist credit can differ from your account username.</p><button className="btn primary" onClick={()=>setOpen(true)}><Upload size={15}/> Submit artwork</button>{open && <ArtworkSubmitModal tags={tags} onClose={()=>setOpen(false)} onSubmitted={()=>{setOpen(false);onSubmitted();window.dispatchEvent(new Event('gsn-my-images-refresh'));}}/>}</>;}
+
 function ArtworkSubmitModal({ onClose, onSubmitted, tags }: { onClose: () => void; onSubmitted: () => void; tags: string[] }) {
+  const objectUrls = useRef(new Set<string>());
+  useEffect(() => { const urls = objectUrls.current; return () => { urls.forEach(url => URL.revokeObjectURL(url)); }; }, []);
+  useEffect(() => { let stale=false; if (supabase) void supabase.auth.getUser().then(async ({data}) => { if(data.user){ const profile=await loadProfile(data.user.id); if(!stale)setArtist(previous=>previous||profile?.username||''); } }).catch(()=>{ /* Username can still be entered manually. */ }); return()=>{stale=true;}; }, []);
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
   const [description, setDescription] = useState('');
@@ -850,28 +862,21 @@ function ArtworkSubmitModal({ onClose, onSubmitted, tags }: { onClose: () => voi
   const [items, setItems] = useState<{ file: File; tags: string[]; title: string; url: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const addFiles = (list: FileList | null) => { if (!list) return; const next = [...items, ...Array.from(list).map((file) => ({ file, tags: [] as string[], title: title.trim(), url: URL.createObjectURL(file) }))]; if (next.length > 13) setError('Maximum 13 images — extras were skipped.'); setItems(next.slice(0, 13)); };
+  useBlocker({shouldBlockFn:()=>busy,enableBeforeUnload:busy});
+  const addFiles = (list: FileList | null) => { if (!list || busy) return; const remaining=13-items.length; const files=Array.from(list); if(files.length>remaining)setError('Maximum 13 images — extras were skipped.'); const next=files.slice(0,remaining).map(file=>{const url=URL.createObjectURL(file);objectUrls.current.add(url);return {file,tags:[] as string[],title:title.trim(),url};});setItems([...items,...next]); };
   const submit = async (e: React.FormEvent) => {
     e.preventDefault(); setError('');
     if (!artist.trim() || !items.length || items.some((item) => !item.title.trim())) { setError('Please provide an artist username and a title for each image.'); return; }
     if (items.some((i) => i.file.size > 12 * 1024 * 1024)) { setError('Please keep each image under 12 MB.'); return; }
     setBusy(true);
-    try { await submitArtBatch({ title: title.trim(), artist_name: artist.trim(), description: description.trim(), rating, items: items.map(({ file, tags: t, title: imageTitle }) => ({ file, tags: t, title: imageTitle })) }); onSubmitted(); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Upload failed.'); }
+    try { await submitArtBatch({ title: title.trim(), artist_name: artist.trim(), description: description.trim(), rating, onUploaded: file => { setItems(previous => previous.filter(item => { if(item.file===file){URL.revokeObjectURL(item.url);objectUrls.current.delete(item.url);return false;}return true;}));window.dispatchEvent(new Event('gsn-my-images-refresh')); }, items: items.map(({ file, tags: t, title: imageTitle }) => ({ file, tags: t, title: imageTitle })) }); onSubmitted(); }
+    catch (err) { setError((err instanceof Error ? err.message : 'Upload failed.') + ' Unsent images remain here; submitted images are in My Images.'); }
     finally { setBusy(false); }
   };
-  return <div className="modal-backdrop"><form className="modal" onSubmit={submit}><div className="modal-head"><h2>Submit community artwork</h2><button className="btn ghost" type="button" onClick={onClose}><X size={17} /></button></div><div className="modal-body"><div className="upload-note"><strong>Up to 13 images.</strong> Each image can have its own tags — type a word or #tag to search. Submissions wait for moderation.</div><div className="form-grid"><div className="field"><label>Artwork title</label><input className="text-input" value={title} onChange={e => setTitle(e.target.value)} required /></div><div className="field"><label>Artist username</label><input className="text-input" value={artist} onChange={e => setArtist(e.target.value)} required /></div><div className="field full"><label>Images ({items.length}/13)</label><input className="text-input" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif" disabled={items.length >= 13} onChange={e => { addFiles(e.target.files); e.target.value = ''; }} /></div>{items.map((it, i) => <div className="field full batch-item" key={it.url}><img src={it.url} alt="" /><div style={{ flex: 1, display: 'grid', gap: 8 }}><input className="text-input" value={it.title} placeholder={`Title for image ${i + 1}`} aria-label={`Title for image ${i + 1}`} onChange={(e) => setItems(items.map((x, j) => j === i ? { ...x, title: e.target.value } : x))} /><HashTagInput tags={tags} value={it.tags} onChange={(v) => setItems(items.map((x, j) => j === i ? { ...x, tags: v } : x))} /></div><button type="button" className="btn ghost mini" onClick={() => setItems(items.filter((_, j) => j !== i))}><X size={12} /></button></div>)}<div className="field"><label>Section</label><select className="select-input" value={rating} onChange={e => setRating(e.target.value as ArtworkRating)}><option value="sfw">General</option><option value="nsfw">Mature / NSFW</option></select></div><div className="field full"><label>Description</label><textarea className="text-area" value={description} onChange={e => setDescription(e.target.value)} placeholder="Optional context or caption" /></div></div>{error && <div className="form-error">{error}</div>}</div><div className="modal-foot"><button className="btn ghost" type="button" onClick={onClose}>Cancel</button><button className="btn primary" type="submit" disabled={busy}>{busy ? 'Uploading…' : `Submit ${items.length || ''} for review`}</button></div></form></div>;
+  return <div className="modal-backdrop"><form className="modal" onSubmit={submit}><div className="modal-head"><h2>Submit community artwork</h2><button className="btn ghost" type="button" disabled={busy} onClick={onClose}><X size={17} /></button></div><div className="modal-body"><div className="upload-note"><strong>Up to 13 images.</strong> Each image can have its own tags — type a word or #tag to search. Submissions wait for moderation.</div><div className="form-grid"><div className="field"><label htmlFor="art-title">Artwork title</label><input className="text-input" maxLength={150} disabled={busy} id="art-title" value={title} onChange={e => setTitle(e.target.value)} required /></div><div className="field"><label htmlFor="art-credit">Artist username</label><input className="text-input" maxLength={100} disabled={busy} id="art-credit" value={artist} onChange={e => setArtist(e.target.value)} required /></div><div className="field full"><label htmlFor="art-files">Images ({items.length}/13)</label><input className="text-input" id="art-files" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif" disabled={busy || items.length >= 13} onChange={e => { addFiles(e.target.files); e.target.value = ''; }} /></div>{items.map((it, i) => <div className="field full batch-item" key={it.url}><img src={it.url} alt="" /><div style={{ flex: 1, display: 'grid', gap: 8 }}><input className="text-input" maxLength={150} disabled={busy} value={it.title} placeholder={`Title for image ${i + 1}`} aria-label={`Title for image ${i + 1}`} onChange={(e) => setItems(items.map((x, j) => j === i ? { ...x, title: e.target.value } : x))} /><HashTagInput tags={tags} value={it.tags} onChange={(v) => setItems(items.map((x, j) => j === i ? { ...x, tags: v } : x))} /></div><button type="button" disabled={busy} aria-label={`Remove image ${i + 1}`} className="btn ghost mini" onClick={() => { URL.revokeObjectURL(it.url); objectUrls.current.delete(it.url); setItems(items.filter((_, j) => j !== i)); }}><X size={12} /></button></div>)}<div className="field"><label htmlFor="art-rating">Section</label><select className="select-input" id="art-rating" value={rating} onChange={e => setRating(e.target.value as ArtworkRating)}><option value="sfw">General</option><option value="nsfw">Mature / NSFW</option></select></div><div className="field full"><label htmlFor="art-description">Description</label><textarea className="text-area" maxLength={1000} disabled={busy} id="art-description" value={description} onChange={e => setDescription(e.target.value)} placeholder="Optional context or caption" /></div></div>{error && <div className="form-error" role="alert">{error}</div>}</div><div className="modal-foot"><button className="btn ghost" type="button" disabled={busy} onClick={onClose}>Cancel</button><button className="btn primary" type="submit" disabled={busy}>{busy ? 'Uploading…' : `Submit ${items.length || ''} for review`}</button></div></form></div>;
 }
 
-function CommunityModerationPage({ onChanged }: { onChanged: () => void }) {
-  const [items, setItems] = useState<Artwork[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const refresh = () => getPendingArt().then(next => { setItems(next); setError(''); }).catch(() => setError('Could not load submissions. Please retry.'));
-  useEffect(() => { refresh(); }, []);
-  const decide = async (id: string, status: 'approved' | 'rejected') => { setBusy(true); try { await setArtStatus(id, status); await refresh(); onChanged(); } catch (error) { setError(error instanceof Error ? error.message : 'Moderation failed. Please retry.'); } finally { setBusy(false); } };
-  return <><div className="eyebrow" style={{ color: 'var(--blue)' }}>Community control / moderation queue</div><h1 className="display-title">Review <em>submissions</em></h1><p className="lede">Approve or reject artwork before it becomes visible. Mature submissions stay in the mature section after approval.</p><div role="status">{error && <div className="form-error">{error}<button className="btn" onClick={refresh}>Retry</button></div>}</div><div className="moderation-list">{items.length ? items.map(art => <div className="moderation-card" key={art.id}><img src={art.image_url} alt={art.title} /><div className="moderation-info"><div className="art-card-title">{art.title}</div><div className="art-card-meta">by {art.artist_name} · {art.rating === 'nsfw' ? 'MATURE / NSFW' : 'GENERAL'}</div><p>{art.description || 'No description provided.'}</p><div className="row-actions"><button className="btn primary" disabled={busy} onClick={() => decide(art.id, 'approved')}><Check size={14} /> Approve</button><button className="btn danger" disabled={busy} onClick={() => decide(art.id, 'rejected')}><Ban size={14} /> Reject</button></div></div></div>) : <EmptyState text="No submissions are waiting for review." />}</div></>;
-}
+function CommunityModerationPage({ onChanged }: { onChanged: () => void }) { return <ModerationPage onChanged={onChanged}/>; }
 
 function SearchModal({ data, term, setTerm, onClose, onOpen }: { data: DatabaseState; term: string; setTerm: (value: string) => void; onClose: () => void; onOpen: (category: Category, name: string) => void }) {
   const [sector, setSector] = useState('all');

@@ -12,6 +12,10 @@ const labels: Record<string, string> = {
   compare: "Compare Units",
   community: "Community Art",
   terms: "Terms of Use",
+  profile: "Profile",
+  notifications: "Notifications",
+  notices: "Notices",
+  comments: "Entry Comments",
   editor: "Database Editor",
   "community-editor": "Art Moderation",
 };
@@ -50,7 +54,9 @@ export function pageMeta(path: string, archive?: PublicArchive | null) {
   const noindex =
     archive === null ||
     missing ||
-    ["editor", "community-editor"].includes(section) ||
+    ["editor", "community-editor", "profile", "notifications", "notices", "comments"].includes(
+      section,
+    ) ||
     (!!section && !labels[section] && section !== "entry");
   const title = `${name} — GSN Arena`;
   const canonical = `${SITE_URL}${path === "/" ? "/" : "/" + segments.join("/")}`;
