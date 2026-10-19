@@ -1,3 +1,5 @@
+import { CropImageButton } from "./PortraitCropper";
+import { ForgotPasswordForm } from "./PasswordRecovery";
 import { loadProfile } from "./lib/member";
 import { AccountMenu, ProfilePage, NotificationsPage, CommentsPage, NoticeCard, NoticesAdmin, LoginRequired, ModerationPage } from "./MemberArea";
 import { ImageViewerLink } from "./ImageViewerLink";
@@ -719,7 +721,7 @@ function EditorModal({ initial, category, onClose, onSave, userId }: { userId: s
     {!isTheory(category) && <><FeatFields value={form} onBusyChange={setEvidenceBusy} onChange={patch => setForm(previous => ({ ...previous, ...(typeof patch === 'function' ? patch(previous) : patch) }))} />
     <div className="field full summary-field"><label>Hypothetical summary</label><button className="document-launch" type="button" disabled={Boolean(draft.candidate)} onClick={() => setDocumentField('hypothetical')}><span className="document-launch-icon"><FileText size={20} /></span><span><strong>Open hypothetical editor</strong><small>{plainEntryText(form.hypothetical || '').slice(0, 110) || 'No hypothesis written yet'}</small></span><Pencil size={16}/></button></div></>}
     </div></details><details className="editor-section" open><summary>Images</summary><div className="form-grid">
-    <div className="field full"><label>Primary profile image</label><div className="image-pick-row">{form.image ? <img className="image-thumb profile-preview" src={form.image} alt="" /> : null}<ImagePickButton onUrl={(url) => setField('image', url)} />{form.image ? <button type="button" className="btn ghost mini" onClick={() => setField('image', '')}><X size={12}/> Remove</button> : null}</div></div>
+    <div className="field full"><label>Primary profile image</label><div className="image-pick-row">{form.image ? <img className="image-thumb profile-preview" src={form.image} alt="" /> : null}<CropImageButton outputSize={1024} label="Change portrait image" onCropped={async file=>{const url=await uploadArchiveImage(file);setField('image',url);}}/><button type="button" className="btn ghost" onClick={()=>setField('image','/gsn-logo.png')}>Use GSN Arena logo</button>{form.image ? <button type="button" className="btn ghost mini" onClick={() => setField('image', '')}><X size={12}/> Remove</button> : null}</div></div>
     </div></details><details className="editor-section"><summary>Voice lines</summary><div className="form-grid">
     <div className="field full"><div className="edit-section-label">Voice lines</div><div className="note-guide">Add as many lines as you like. One plays when someone opens this entry — line 1 is the most common and the chances adjust automatically. The victory line plays when this character wins in Compare.</div>
       {lines.map((line, i) => <VoiceSlot key={i} label={`Line ${i + 1} · ${percents[i]}% chance`} value={line} onChange={(v) => setLines(v ? lines.map((x, j) => j === i ? v : x) : lines.filter((_, j) => j !== i))} />)}
@@ -747,7 +749,7 @@ function ReferenceText({ text }: { text: string; data: DatabaseState }) {
 }
 
 function EmailAuthModal({ onClose }: { onClose: () => void }) {
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -774,11 +776,11 @@ function EmailAuthModal({ onClose }: { onClose: () => void }) {
       setBusy(false);
     }
   };
-  return <div className="modal-backdrop"><form className="modal" onSubmit={submit}>
-    <div className="modal-head"><h2>{mode === 'signin' ? 'Sign in' : 'Create account'}</h2><button className="btn ghost" type="button" aria-label="Close sign in" onClick={onClose}><X size={17} /></button></div>
-    <div className="modal-body"><div className="form-grid">
+  return <div className="modal-backdrop"><div className="modal">
+    <div className="modal-head"><h2>{mode === 'forgot' ? 'Recover password' : mode === 'signin' ? 'Sign in' : 'Create account'}</h2><button className="btn ghost" type="button" aria-label="Close sign in" onClick={onClose}><X size={17} /></button></div>
+    <div className="modal-body">{mode === 'forgot' ? <><ForgotPasswordForm initialEmail={email}/><button type="button" className="btn ghost" onClick={()=>setMode('signin')}>Back to sign in</button></> : <form onSubmit={submit}><div className="form-grid">
       <div className="field full"><label>Email</label><input className="text-input" type="email" value={email} onChange={e => setEmail(e.target.value)} required autoComplete="email" /></div>
-      <div className="field full"><label>Password</label><input className="text-input" type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} /></div>
+      <div className="field full"><label>Password</label><input className="text-input" type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={mode === 'signup' ? 8 : 6} autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} /></div>
       {error && <div className="field full" style={{ color: 'var(--red)', font: '12px var(--font-mono)' }}>{error}</div>}
       {message && <div className="field full" style={{ color: 'var(--blue)', font: '12px var(--font-mono)' }}>{message}</div>}
       <div className="field full" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -787,8 +789,9 @@ function EmailAuthModal({ onClose }: { onClose: () => void }) {
           {mode === 'signin' ? 'Need an account? Sign up' : 'Have an account? Sign in'}
         </button>
       </div>
-    </div></div>
-  </form></div>;
+      <button className="btn ghost" type="button" disabled={busy} onClick={() => {setMode('forgot');setError('');setMessage('');}}>Forgot password?</button>
+    </div></form>}</div>
+  </div></div>;
 }
 
 function TermsPage({ terms, editable, onSave }: { terms: LegalTerms; editable: boolean; onSave: (terms: LegalTerms) => Promise<void> }) {

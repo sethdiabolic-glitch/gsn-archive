@@ -7,6 +7,7 @@ const api = (client) =>
     "src/lib/community.ts",
     {
       "./gallery": load("src/lib/gallery.ts"),
+      "./recovery-session": load("src/lib/recovery-session.ts"),
       "@supabase/supabase-js": { createClient: () => client },
     },
     { VITE_SUPABASE_URL: url, VITE_SUPABASE_ANON_KEY: "test" },
