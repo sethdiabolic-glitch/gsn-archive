@@ -1,3 +1,5 @@
+import { CropImageButton } from "./PortraitCropper";
+import { passwordError } from "./lib/recovery-session";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { User } from "@supabase/supabase-js";
 import { Bell, UserRound, X, ArrowLeft, Image as ImageIcon } from "lucide-react";
@@ -216,7 +218,18 @@ export function ProfilePage({
     [version, setVersion] = useState(0),
     [tab, setTab] = useState("images"),
     [password, setPassword] = useState(""),
+    [confirmation, setConfirmation] = useState(""),
+    [avatarPreview, setAvatarPreview] = useState(""),
     [email, setEmail] = useState(user.email || "");
+  useEffect(() => {
+    if (!avatar) {
+      setAvatarPreview("");
+      return;
+    }
+    const url = URL.createObjectURL(avatar);
+    setAvatarPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [avatar]);
   useEffect(() => {
     let stale = false;
     loadProfile(user.id)
@@ -297,7 +310,11 @@ export function ProfilePage({
     try {
       const changes: { email?: string; password?: string } = {};
       if (email !== user.email) changes.email = email;
-      if (password) changes.password = password;
+      if (password) {
+        const invalid = passwordError(password, confirmation);
+        if (invalid) throw new Error(invalid);
+        changes.password = password;
+      }
       if (!Object.keys(changes).length) {
         setStatus("No account changes to save.");
         return;
@@ -305,6 +322,7 @@ export function ProfilePage({
       const { error } = await client().auth.updateUser(changes);
       if (error) throw error;
       setPassword("");
+      setConfirmation("");
       setStatus(changes.email ? "Check your email to confirm the change." : "Password updated.");
     } catch (e) {
       setError(message(e));
@@ -315,7 +333,15 @@ export function ProfilePage({
   return (
     <section className="member-console">
       <header className="profile-hero">
-        <Avatar path={resetAvatar ? null : profile?.avatar_path} username={profile?.username} />
+        {avatarPreview ? (
+          <img
+            className="member-avatar"
+            src={avatarPreview}
+            alt="Unsaved cropped profile preview"
+          />
+        ) : (
+          <Avatar path={resetAvatar ? null : profile?.avatar_path} username={profile?.username} />
+        )}
         <div>
           <span className="eyebrow">Your archive console</span>
           <h1>{profile?.username || "Create your profile"}</h1>
@@ -362,17 +388,18 @@ export function ProfilePage({
               <small role="status">
                 {usernameError(username) || availability || "3–24 letters, numbers or underscores."}
               </small>
-              <label>
-                Profile picture · PNG, JPEG or WebP, up to 2 MB
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  onChange={(e) => {
-                    setAvatar(e.target.files?.[0] || null);
-                    setResetAvatar(false);
-                  }}
-                />
-              </label>
+              <p>
+                Choose a picture, position it in the circle, then save your profile. Originals up to
+                12 MB; cropped avatars are resized to 512 × 512.
+              </p>
+              <CropImageButton
+                disabled={busy}
+                onCropped={(file) => {
+                  setAvatar(file);
+                  setResetAvatar(false);
+                  setStatus("Crop applied to draft. Save profile to publish it.");
+                }}
+              />
               {avatar && <p>Selected: {avatar.name}</p>}
               <button
                 type="button"
@@ -382,7 +409,7 @@ export function ProfilePage({
                   setResetAvatar(true);
                 }}
               >
-                Use GSN logo
+                Use GSN Arena logo
               </button>
               <button className="btn primary" disabled={busy}>
                 {busy ? "Saving…" : "Save profile"}
@@ -433,6 +460,20 @@ export function ProfilePage({
                   placeholder="Leave blank to keep your password"
                 />
               </label>
+              <label>
+                Confirm new password
+                <input
+                  className="text-input"
+                  type="password"
+                  value={confirmation}
+                  minLength={8}
+                  required={Boolean(password)}
+                  autoComplete="new-password"
+                  onChange={(e) => setConfirmation(e.target.value)}
+                  placeholder="Repeat your new password"
+                />
+              </label>
+              <a href="/reset-password">Forgot your password? Request a recovery email</a>
               <p>
                 Email changes may require confirmation; sensitive changes may require a fresh
                 sign-in.
