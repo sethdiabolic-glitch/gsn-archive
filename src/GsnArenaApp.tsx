@@ -279,8 +279,8 @@ function AppContent({ initialArchive }: { initialArchive?: PublicArchive | null 
   const parsed = location.split('/').filter(Boolean);
   const requestedPage = parsed[0] || 'home';
   const allowedPages = mode === 'editor'
-    ? ['home', 'tier-list', 'compare', 'terms', 'editor', 'community', 'community-editor', 'notices', 'profile', 'notifications', 'comments', 'entry', ...categories]
-    : ['home', 'tier-list', 'compare', 'terms', 'community', 'profile', 'notifications', 'comments', 'entry', ...categories];
+    ? ['home', 'tier-list', 'compare', 'terms', 'upload', 'editor', 'community', 'community-editor', 'notices', 'profile', 'notifications', 'comments', 'entry', ...categories]
+    : ['home', 'tier-list', 'compare', 'terms', 'upload', 'community', 'profile', 'notifications', 'comments', 'entry', ...categories];
   const page = allowedPages.includes(requestedPage) ? requestedPage : (mode === 'editor' ? 'editor' : 'home');
   const activeCategory = categories.includes(page as Category) ? page as Category : null;
   const requestedEntry = page === 'entry' ? (() => { try { return decodeURIComponent(parsed.slice(2).join('/')); } catch { return ''; } })() : '';
@@ -295,7 +295,7 @@ function AppContent({ initialArchive }: { initialArchive?: PublicArchive | null 
           page === 'editor' ? 'Archive database' :
           page === 'community' ? 'Community art' :
             page === 'community-editor' ? 'Community moderation' :
-              page === 'profile' ? 'Profile' : page === 'notifications' ? 'Notifications' : page === 'comments' ? 'Discussion' : page === 'notices' ? 'Notices' : page === 'entry' ? 'Dossier' : activeCategory ? categoryMeta[activeCategory].label : 'Archive';
+              page === 'upload' ? 'Upload artwork' : page === 'profile' ? 'Profile' : page === 'notifications' ? 'Notifications' : page === 'comments' ? 'Discussion' : page === 'notices' ? 'Notices' : page === 'entry' ? 'Dossier' : activeCategory ? categoryMeta[activeCategory].label : 'Archive';
 
   useEffect(() => {
     if (page === 'entry' && activeEntry !== requestedEntry && entryCategory) {
@@ -366,6 +366,7 @@ function AppContent({ initialArchive }: { initialArchive?: PublicArchive | null 
           {archiveSource !== 'remote' && <div className="notice-box" role="status"><strong>{archiveSource === 'unconfigured' ? 'Shared storage is not configured.' : 'Showing saved or built-in content. Updates could not be loaded.'}</strong><p>{lastSync ? `Last synced: ${new Date(lastSync).toLocaleString()}` : 'No successful sync has been recorded in this browser.'} Publishing is unavailable until the shared archive reconnects.</p><button className="btn" disabled={refreshing} onClick={() => setArchiveRefresh(value => value + 1)}>{refreshing ? 'Connecting…' : 'Retry connection'}</button></div>}
           {editing ? <EditorModal key={`${editing.category}/${editing.entry?.id || editing.entry?.name || 'new'}`} userId={currentUser?.id || 'anonymous'} initial={editing.entry} category={editing.category} onClose={() => setEditing(null)} onSave={saveEntry} /> : <>
           {page === 'profile' && (currentUser ? <ProfilePage key={currentUser.id} user={currentUser} onChanged={() => setArtRefresh(v=>v+1)}><ProfileSubmission tags={imageTags} onSubmitted={() => setArtRefresh(v=>v+1)}/></ProfilePage> : <LoginRequired onSignIn={signInAsAdmin}/>)}
+          {page === 'upload' && (currentUser ? <ArtworkUploadPage tags={imageTags} onClose={() => navigate('/community')} onSubmitted={() => { setArtRefresh(v=>v+1); window.dispatchEvent(new Event('gsn-my-images-refresh')); setToast('Artwork submitted for review'); navigate('/profile'); }} /> : <LoginRequired onSignIn={signInAsAdmin}/>)}
           {page === 'notifications' && (currentUser ? <NotificationsPage key={currentUser.id}/> : <LoginRequired onSignIn={signInAsAdmin}/>)}
           {page === 'comments' && <CommentsPage key={`${parsed[1]}/${currentUser?.id || 'guest'}`} entryId={parsed[1] || ''} user={currentUser} isAdmin={mode === 'editor'} onSignIn={signInAsAdmin}/>}
           {page === 'notices' && mode === 'editor' && <NoticesAdmin/>}
@@ -831,7 +832,7 @@ function CommunityArtPage({ artworks, onSubmitted, tags, userId, onToast, isAdmi
       </div>
       <div className="community-actions">
         {supabase && !userId && <button className="btn ghost" onClick={signIn}><LogIn size={14} /> Sign in</button>}
-        <button className="btn primary" onClick={() => navigate('/profile')}><Upload size={14} /> Submit artwork</button>
+        <button className="btn primary" onClick={() => navigate('/upload')}><Upload size={14} /> Submit artwork</button>
       </div>
     </div>
     {tab === 'nsfw' && <div className="content-warning"><AlertTriangle size={17} /><div><strong>Mature content section</strong><br /><span>This section may contain sexually explicit or otherwise adult artwork submitted by users. By entering this section, you acknowledge the nature of the material and choose to view it.</span></div></div>}
@@ -852,13 +853,12 @@ function HashTagInput({ tags, value, onChange }: { tags: string[]; value: string
 }
 
 function MessageCount({entryId}: {entryId:string}) { const [count,setCount]=useState<number|null>(null); useEffect(()=>{let stale=false; if(supabase)void supabase.from('entry_comments').select('id',{count:'exact',head:true}).eq('entry_id',entryId).is('deleted_at',null).then(({count,error})=>{if(!stale&&!error)setCount(count);});return()=>{stale=true;};},[entryId]);return count===null?null:<span>· {count}</span>; }
-function ProfileSubmission({tags,onSubmitted}: {tags:string[];onSubmitted:()=>void}) {const [open,setOpen]=useState(false);return <><p>Upload up to 13 images. Submissions stay private until approved. Artist credit can differ from your account username.</p><button className="btn primary" onClick={()=>setOpen(true)}><Upload size={15}/> Submit artwork</button>{open && <ArtworkSubmitModal tags={tags} onClose={()=>setOpen(false)} onSubmitted={()=>{setOpen(false);onSubmitted();window.dispatchEvent(new Event('gsn-my-images-refresh'));}}/>}</>;}
+function ProfileSubmission(_props: {tags:string[];onSubmitted:()=>void}) {const [, navigate] = useLocation();return <><p>Upload up to 13 images. Submissions stay private until approved. Artist credit can differ from your account username.</p><button className="btn primary" onClick={()=>navigate('/upload')}><Upload size={15}/> Submit artwork</button></>;}
 
-function ArtworkSubmitModal({ onClose, onSubmitted, tags }: { onClose: () => void; onSubmitted: () => void; tags: string[] }) {
+function ArtworkUploadPage({ onClose, onSubmitted, tags }: { onClose: () => void; onSubmitted: () => void; tags: string[] }) {
   const objectUrls = useRef(new Set<string>());
   useEffect(() => { const urls = objectUrls.current; return () => { urls.forEach(url => URL.revokeObjectURL(url)); }; }, []);
   useEffect(() => { let stale=false; if (supabase) void supabase.auth.getUser().then(async ({data}) => { if(data.user){ const profile=await loadProfile(data.user.id); if(!stale)setArtist(previous=>previous||profile?.username||''); } }).catch(()=>{ /* Username can still be entered manually. */ }); return()=>{stale=true;}; }, []);
-  const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
   const [description, setDescription] = useState('');
   const [rating, setRating] = useState<ArtworkRating>('sfw');
@@ -866,17 +866,41 @@ function ArtworkSubmitModal({ onClose, onSubmitted, tags }: { onClose: () => voi
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   useBlocker({shouldBlockFn:()=>busy,enableBeforeUnload:busy});
-  const addFiles = (list: FileList | null) => { if (!list || busy) return; const remaining=13-items.length; const files=Array.from(list); if(files.length>remaining)setError('Maximum 13 images — extras were skipped.'); const next=files.slice(0,remaining).map(file=>{const url=URL.createObjectURL(file);objectUrls.current.add(url);return {file,tags:[] as string[],title:title.trim(),url};});setItems([...items,...next]); };
+  const addFiles = (list: FileList | null) => { if (!list || busy) return; const remaining=13-items.length; const files=Array.from(list); if(files.length>remaining)setError('Maximum 13 images — extras were skipped.'); const next=files.slice(0,remaining).map(file=>{const url=URL.createObjectURL(file);objectUrls.current.add(url);return {file,tags:[] as string[],title:'',url};});setItems([...items,...next]); };
   const submit = async (e: React.FormEvent) => {
     e.preventDefault(); setError('');
     if (!artist.trim() || !items.length || items.some((item) => !item.title.trim())) { setError('Please provide an artist username and a title for each image.'); return; }
     if (items.some((i) => i.file.size > 12 * 1024 * 1024)) { setError('Please keep each image under 12 MB.'); return; }
     setBusy(true);
-    try { await submitArtBatch({ title: title.trim(), artist_name: artist.trim(), description: description.trim(), rating, onUploaded: file => { setItems(previous => previous.filter(item => { if(item.file===file){URL.revokeObjectURL(item.url);objectUrls.current.delete(item.url);return false;}return true;}));window.dispatchEvent(new Event('gsn-my-images-refresh')); }, items: items.map(({ file, tags: t, title: imageTitle }) => ({ file, tags: t, title: imageTitle })) }); onSubmitted(); }
+    try { await submitArtBatch({ title: '', artist_name: artist.trim(), description: description.trim(), rating, onUploaded: file => { setItems(previous => previous.filter(item => { if(item.file===file){URL.revokeObjectURL(item.url);objectUrls.current.delete(item.url);return false;}return true;}));window.dispatchEvent(new Event('gsn-my-images-refresh')); }, items: items.map(({ file, tags: t, title: imageTitle }) => ({ file, tags: t, title: imageTitle })) }); onSubmitted(); }
     catch (err) { setError((err instanceof Error ? err.message : 'Upload failed.') + ' Unsent images remain here; submitted images are in My Images.'); }
     finally { setBusy(false); }
   };
-  return <div className="modal-backdrop"><form className="modal" onSubmit={submit}><div className="modal-head"><h2>Submit community artwork</h2><button className="btn ghost" type="button" disabled={busy} onClick={onClose}><X size={17} /></button></div><div className="modal-body"><div className="upload-note"><strong>Up to 13 images.</strong> Each image can have its own tags — type a word or #tag to search. Submissions wait for moderation.</div><div className="form-grid"><div className="field"><label htmlFor="art-title">Artwork title</label><input className="text-input" maxLength={150} disabled={busy} id="art-title" value={title} onChange={e => setTitle(e.target.value)} required /></div><div className="field"><label htmlFor="art-credit">Artist username</label><input className="text-input" maxLength={100} disabled={busy} id="art-credit" value={artist} onChange={e => setArtist(e.target.value)} required /></div><div className="field full"><label htmlFor="art-files">Images ({items.length}/13)</label><input className="text-input" id="art-files" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif" disabled={busy || items.length >= 13} onChange={e => { addFiles(e.target.files); e.target.value = ''; }} /></div>{items.map((it, i) => <div className="field full batch-item" key={it.url}><img src={it.url} alt="" /><div style={{ flex: 1, display: 'grid', gap: 8 }}><input className="text-input" maxLength={150} disabled={busy} value={it.title} placeholder={`Title for image ${i + 1}`} aria-label={`Title for image ${i + 1}`} onChange={(e) => setItems(items.map((x, j) => j === i ? { ...x, title: e.target.value } : x))} /><HashTagInput tags={tags} value={it.tags} onChange={(v) => setItems(items.map((x, j) => j === i ? { ...x, tags: v } : x))} /></div><button type="button" disabled={busy} aria-label={`Remove image ${i + 1}`} className="btn ghost mini" onClick={() => { URL.revokeObjectURL(it.url); objectUrls.current.delete(it.url); setItems(items.filter((_, j) => j !== i)); }}><X size={12} /></button></div>)}<div className="field"><label htmlFor="art-rating">Section</label><select className="select-input" id="art-rating" value={rating} onChange={e => setRating(e.target.value as ArtworkRating)}><option value="sfw">General</option><option value="nsfw">Mature / NSFW</option></select></div><div className="field full"><label htmlFor="art-description">Description</label><textarea className="text-area" maxLength={1000} disabled={busy} id="art-description" value={description} onChange={e => setDescription(e.target.value)} placeholder="Optional context or caption" /></div></div>{error && <div className="form-error" role="alert">{error}</div>}</div><div className="modal-foot"><button className="btn ghost" type="button" disabled={busy} onClick={onClose}>Cancel</button><button className="btn primary" type="submit" disabled={busy}>{busy ? 'Uploading…' : `Submit ${items.length || ''} for review`}</button></div></form></div>;
+  const [dragging, setDragging] = useState(false);
+  return <form className="upload-page" onSubmit={submit}>
+    <button type="button" className="btn ghost back-link" disabled={busy} onClick={onClose}><ArrowLeft size={15} /> Back to community art</button>
+    <div className="eyebrow" style={{ color: '#d93f7a' }}>Community archive / new submission</div>
+    <h1 className="display-title">Upload <em>Artwork</em></h1>
+    <p className="lede">Add up to 13 images. Give each one its own title and tags. Submissions wait for moderation.</p>
+    <section className="upload-card"><h2 className="upload-step">01 · Submission details</h2><div className="upload-fields">
+      <div className="field"><label htmlFor="art-credit">Artist username</label><input className="text-input" maxLength={100} disabled={busy} id="art-credit" value={artist} onChange={e => setArtist(e.target.value)} required /></div>
+      <div className="field"><label htmlFor="art-rating">Section</label><select className="select-input" id="art-rating" disabled={busy} value={rating} onChange={e => setRating(e.target.value as ArtworkRating)}><option value="sfw">General</option><option value="nsfw">Mature / NSFW</option></select></div>
+      <div className="field full"><label htmlFor="art-description">Description (shared by all images)</label><textarea className="text-area" maxLength={1000} disabled={busy} id="art-description" value={description} onChange={e => setDescription(e.target.value)} placeholder="Optional context or caption" /></div>
+    </div></section>
+    <section className="upload-card"><h2 className="upload-step">02 · Images ({items.length}/13)</h2>
+      <label className={`upload-drop ${dragging ? 'is-dragging' : ''} ${busy || items.length >= 13 ? 'is-disabled' : ''}`} onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={e => { e.preventDefault(); setDragging(false); addFiles(e.dataTransfer.files); }}>
+        <Upload size={26} /><strong>Tap to choose images</strong><span>or drag them here · PNG, JPG, WEBP, GIF · max 12 MB each</span>
+        <input id="art-files" type="file" hidden multiple accept="image/png,image/jpeg,image/webp,image/gif" disabled={busy || items.length >= 13} onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
+      </label>
+      <div className="upload-grid">{items.map((it, i) => <div className="upload-item" key={it.url}>
+        <div className="upload-thumb"><img src={it.url} alt="" /><button type="button" disabled={busy} aria-label={`Remove image ${i + 1}`} className="btn ghost mini" onClick={() => { URL.revokeObjectURL(it.url); objectUrls.current.delete(it.url); setItems(items.filter((_, j) => j !== i)); }}><X size={12} /></button></div>
+        <div className="upload-item-fields"><label>Image {i + 1} title</label><input className="text-input" maxLength={150} disabled={busy} value={it.title} placeholder="Title for this image" aria-label={`Title for image ${i + 1}`} onChange={(e) => { const v = e.target.value; setItems(prev => prev.map((x, j) => j === i ? { ...x, title: v } : x)); }} />
+        <label>Tags</label><HashTagInput tags={tags} value={it.tags} onChange={(v) => setItems(prev => prev.map((x, j) => j === i ? { ...x, tags: v } : x))} /></div>
+      </div>)}</div>
+    </section>
+    {error && <div className="form-error" role="alert">{error}</div>}
+    <div className="upload-actions"><button className="btn ghost" type="button" disabled={busy} onClick={onClose}>Cancel</button><button className="btn primary" type="submit" disabled={busy || !items.length}>{busy ? 'Uploading…' : `Submit ${items.length || ''} for review`}</button></div>
+  </form>;
 }
 
 function CommunityModerationPage({ onChanged }: { onChanged: () => void }) { return <ModerationPage onChanged={onChanged}/>; }
