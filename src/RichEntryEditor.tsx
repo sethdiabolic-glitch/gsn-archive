@@ -247,6 +247,34 @@ export function RichEntryEditor({
                 () => editor?.chain().focus().toggleStrike().run(),
                 <Strikethrough size={17} />,
               )}
+              <label className="editor-tool" title="Text colour">
+                <input
+                  type="color"
+                  className="editor-color"
+                  aria-label="Text colour"
+                  disabled={disabled}
+                  value={(editor?.getAttributes("textStyle")["color"] as string)?.startsWith("#") ? (editor?.getAttributes("textStyle")["color"] as string) : "#e8c46a"}
+                  onChange={(e) => editor?.chain().focus().setColor(e.target.value).run()}
+                />
+                <span>Colour</span>
+              </label>
+              <label className="editor-tool" title="Highlight">
+                <input
+                  type="color"
+                  className="editor-color"
+                  aria-label="Highlight colour"
+                  disabled={disabled}
+                  defaultValue="#3a2f10"
+                  onChange={(e) => editor?.chain().focus().setBackgroundColor(e.target.value).run()}
+                />
+                <span>Highlight</span>
+              </label>
+              {cmd(
+                "Clear colour",
+                false,
+                () => editor?.chain().focus().unsetColor().unsetBackgroundColor().run(),
+                <Minus size={17} />,
+              )}
             </RibbonGroup>
             <RibbonGroup label="Paragraph">
               {cmd(

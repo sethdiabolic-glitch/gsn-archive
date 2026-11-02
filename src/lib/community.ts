@@ -241,7 +241,8 @@ export async function submitArtBatch(input: {
   for (let i = 0; i < input.items.length; i++) {
     const it = input.items[i];
     if (!it) continue;
-    const title = it.title.trim() || input.title;
+    const title = it.title.trim();
+    if (!title) throw new Error(`Image ${i + 1} needs its own title.`);
     await submitArt({
       title,
       artist_name: input.artist_name,

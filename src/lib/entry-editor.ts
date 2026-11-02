@@ -2,6 +2,7 @@ import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
 import TextAlign from "@tiptap/extension-text-align";
 import { TableKit } from "@tiptap/extension-table";
+import { TextStyleKit } from "@tiptap/extension-text-style";
 
 const FlowImage = Image.extend({
   addAttributes() {
@@ -21,6 +22,7 @@ export function entryEditorExtensions() {
     StarterKit.configure({ heading: { levels: [2, 3] } }),
     FlowImage.configure({ allowBase64: false }),
     TextAlign.configure({ types: ["heading", "paragraph"] }),
+    TextStyleKit.configure({ lineHeight: false }),
     TableKit.configure({ table: { resizable: true, lastColumnResizable: false } }),
   ];
 }
