@@ -3,6 +3,14 @@ import sanitizeHtml from "sanitize-html";
 const alignment = { "text-align": [/^(left|center|right|justify)$/] };
 const widths = { width: [/^\d+(?:\.\d+)?(?:px|%)$/], "min-width": [/^\d+(?:\.\d+)?px$/] };
 
+const color = /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\)|[a-z]{3,20})$/i;
+const inline = {
+  color: [color],
+  "background-color": [color],
+  "font-family": [/^[\w\s"',-]{1,120}$/],
+  "font-size": [/^\d{1,3}(?:\.\d+)?(?:px|pt|em|rem|%)$/],
+};
+
 export function cleanEntryHtml(value: string): string {
   return sanitizeHtml(value, {
     allowedTags: [
@@ -31,11 +39,17 @@ export function cleanEntryHtml(value: string): string {
       "th",
       "td",
       "colgroup",
+      "span",
+      "mark",
+      "sub",
+      "sup",
       "col",
     ],
     allowedAttributes: {
       img: ["src", "alt", "data-float"],
       a: ["href", "target", "rel"],
+      span: ["style"],
+      mark: ["style"],
       p: ["style"],
       h2: ["style"],
       h3: ["style"],
@@ -46,13 +60,15 @@ export function cleanEntryHtml(value: string): string {
       th: ["colspan", "rowspan", "colwidth", "style"],
     },
     allowedStyles: {
+      span: inline,
+      mark: inline,
       p: alignment,
       h2: alignment,
       h3: alignment,
       table: widths,
       col: widths,
-      td: { ...alignment, ...widths },
-      th: { ...alignment, ...widths },
+      td: { ...alignment, ...widths, "background-color": [color] },
+      th: { ...alignment, ...widths, "background-color": [color] },
     },
     allowedSchemes: ["http", "https", "mailto"],
     allowProtocolRelative: false,
