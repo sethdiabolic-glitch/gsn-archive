@@ -11,6 +11,7 @@ const extensions = load(
       "@tiptap/extension-image",
       "@tiptap/extension-text-align",
       "@tiptap/extension-table",
+      "@tiptap/extension-text-style",
     ].map((name) => [name, require(name)]),
   ),
 );
@@ -68,4 +69,13 @@ test("real editor supports table operations and save/reopen preserves formatting
   editor.commands.setTextSelection(cellPosition);
   assert.equal(editor.commands.deleteTable(), true);
   assert.ok(!editor.getHTML().includes("<table"));
+});
+
+test("pasted colours, highlights and fonts survive editing and saving", () => {
+  const editor = new Editor({ extensions: extensions.entryEditorExtensions(), content: '<p><span style="color: #ff0000; font-family: Georgia">Red</span> <u>under</u></p>' });
+  const saved = cleanEntryHtml(editor.getHTML());
+  editor.destroy();
+  assert.match(saved, /color: ?#ff0000/);
+  assert.match(saved, /font-family: ?Georgia/);
+  assert.match(saved, /<u>under<\/u>/);
 });
