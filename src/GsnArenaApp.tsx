@@ -1,7 +1,6 @@
 import { CropImageButton } from "./PortraitCropper";
 import { ForgotPasswordForm } from "./PasswordRecovery";
-import { loadProfile } from "./lib/member";
-import { AccountMenu, ProfilePage, NotificationsPage, CommentsPage, NoticeCard, NoticesAdmin, LoginRequired, ModerationPage } from "./MemberArea";
+import { ProfilePage, NoticeCard, NoticesAdmin, LoginRequired } from "./MemberArea";
 import { ImageViewerLink } from "./ImageViewerLink";
 import type { PublicArchive } from "./lib/public-archive";
 import { HypotheticalSummary } from './HypotheticalSummary';
@@ -12,18 +11,17 @@ import { FeatEvidence } from './FeatEvidence';
 import { referenceWarnings } from './lib/reference-tools';
 import { Portrait } from './Portrait';
 import { TagSearch } from './TagSearch';
-import { GalleryFilterBar, useGalleryFilters } from './GalleryFilters';
-import { cleanTag, uniqueTags, tagKey, filterArtworks, defaultGalleryFilters } from './lib/gallery';
+import { cleanTag, uniqueTags, tagKey } from './lib/gallery';
 import { ArchiveReferences, ReferenceInline, useArchiveReferences } from './ArchiveReferences';
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { RichEntryEditor } from './RichEntryEditor';
 import { RichDocument } from './RichDocument';
 import { FeatFields } from './FeatFields';
 import { visibleFeats, hasFeatData, type EntryFeats } from './lib/entry-feats';
-import { CommsBanner, MuteToggle, playVoice, rollVoice, entryLines, victoryLine, voicePercents, type VoiceLine } from './VoiceComms';
+import { CommsBanner, MuteToggle, playVoice, nextVoice, isMuted, entryLines, victoryLine, type VoiceLine } from './VoiceComms';
 import { isEntryHtml, plainEntryText } from './lib/entry-content';
 import { useNavigate, useRouterState, useBlocker } from '@tanstack/react-router';
-import { getArt, isGsnAdmin, submitArtBatch, supabase, uploadArchiveImage, uploadArchiveFile, type Artwork, type ArtworkRating } from './lib/community';
+import { isGsnAdmin, supabase, uploadArchiveImage, uploadArchiveFile } from './lib/community';
 import { deleteArchiveEntry, loadArchive, saveArchiveEntry, loadArchiveAliases } from './lib/archive';
 import {
   Archive, ArrowLeft, ArrowRight, BookOpen, ChevronRight, CircleDot, Database,
@@ -139,7 +137,7 @@ function iconFor(category: Category) {
 function AppContent({ initialArchive }: { initialArchive?: PublicArchive | null | undefined }) {
   const [location, setLocation] = useLocation();
   const [data, setData] = useState<DatabaseState>(() => initialArchive ? initialArchive as unknown as DatabaseState : getStoredData());
-  // currentUser = anyone signed in (needed to submit community art).
+  // Only confirmed admins can access editing and account settings.
   // mode only becomes 'editor' once that signed-in user is confirmed as an
   // admin by the database — never just because someone is signed in.
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -155,11 +153,7 @@ function AppContent({ initialArchive }: { initialArchive?: PublicArchive | null 
   const [searchTerm, setSearchTerm] = useState('');
   const [toast, setToast] = useState('');
   const [editing, setEditing] = useState<{ category: Category; entry?: Entry } | null>(null);
-  const [artworks, setArtworks] = useState<Artwork[]>([]);
-  const [artError, setArtError] = useState('');
-  const [artLoading, setArtLoading] = useState(true);
   const [terms, setTerms] = useState<LegalTerms>(() => { if (!initialArchive) { try { return JSON.parse(localStorage.getItem('gsnArenaTerms') || 'null') || defaultTerms; } catch { return defaultTerms; } } const row = initialArchive['settings']?.find(item => item['name'] === 'terms'); return row && typeof row['content'] === 'string' ? { content: row['content'] } : defaultTerms; });
-  const [artRefresh, setArtRefresh] = useState(0);
   const [imageTags, setImageTags] = useState<string[]>(() => { if (!initialArchive) { try { return JSON.parse(localStorage.getItem('gsnArenaTags') || '[]'); } catch { return []; } } const tags = initialArchive['settings']?.find(item => item['name'] === 'image_tags')?.['tags']; return Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === 'string') : []; });
   useEffect(() => { try { localStorage.setItem('gsnArenaTags', JSON.stringify(imageTags)); } catch {} }, [imageTags]);
   const removeImageTag = async (tag: string) => {
@@ -201,13 +195,6 @@ function AppContent({ initialArchive }: { initialArchive?: PublicArchive | null 
     return () => { cancelled = true; };
   }, [mode, archiveRefresh]);
   useEffect(() => {
-    let cancelled = false;
-    setArtLoading(true);
-    getArt().then(next => { if (!cancelled) { setArtworks(next); setArtError(''); } })
-      .catch(() => { if (!cancelled) setArtError('Artwork could not be refreshed. Any artwork still shown may be outdated.'); }).finally(() => { if (!cancelled) setArtLoading(false); });
-    return () => { cancelled = true; };
-  }, [artRefresh]);
-  useEffect(() => {
     if (!supabase) return;
     let active=true, request=0, identity:string|null=null;
     const applySession = (user: any) => {
@@ -226,7 +213,7 @@ function AppContent({ initialArchive }: { initialArchive?: PublicArchive | null 
   }, []);
   const [showAuth, setShowAuth] = useState(false);
   const signInAsAdmin = () => {
-    if (!supabase) { setToast('Connect Supabase first — see COMMUNITY-SETUP.md.'); return; }
+    if (!supabase) { setToast('Connect the archive service before signing in.'); return; }
     setShowAuth(true);
   };
   const signOut = async () => { if (supabase) await supabase.auth.signOut(); setMode('public'); setCurrentUser(null); };
@@ -279,9 +266,9 @@ function AppContent({ initialArchive }: { initialArchive?: PublicArchive | null 
   const parsed = location.split('/').filter(Boolean);
   const requestedPage = parsed[0] || 'home';
   const allowedPages = mode === 'editor'
-    ? ['home', 'tier-list', 'compare', 'terms', 'upload', 'editor', 'community', 'community-editor', 'notices', 'profile', 'notifications', 'comments', 'entry', ...categories]
-    : ['home', 'tier-list', 'compare', 'terms', 'upload', 'community', 'profile', 'notifications', 'comments', 'entry', ...categories];
-  const page = allowedPages.includes(requestedPage) ? requestedPage : (mode === 'editor' ? 'editor' : 'home');
+    ? ['home', 'tier-list', 'compare', 'terms', 'editor', 'notices', 'profile', 'entry', ...categories]
+    : ['home', 'tier-list', 'compare', 'terms', 'profile', 'entry', ...categories];
+  const page = allowedPages.includes(requestedPage) ? requestedPage : 'missing';
   const activeCategory = categories.includes(page as Category) ? page as Category : null;
   const requestedEntry = page === 'entry' ? (() => { try { return decodeURIComponent(parsed.slice(2).join('/')); } catch { return ''; } })() : '';
   const alias = aliases.find(item => item.category === parsed[1] && item.name === requestedEntry);
@@ -293,9 +280,7 @@ function AppContent({ initialArchive }: { initialArchive?: PublicArchive | null 
       page === 'compare' ? 'Compare' :
         page === 'terms' ? 'Terms of Use' :
           page === 'editor' ? 'Archive database' :
-          page === 'community' ? 'Community art' :
-            page === 'community-editor' ? 'Community moderation' :
-              page === 'upload' ? 'Upload artwork' : page === 'profile' ? 'Profile' : page === 'notifications' ? 'Notifications' : page === 'comments' ? 'Discussion' : page === 'notices' ? 'Notices' : page === 'entry' ? 'Dossier' : activeCategory ? categoryMeta[activeCategory].label : 'Archive';
+          page === 'profile' ? 'Account settings' : page === 'notices' ? 'Notices' : page === 'entry' ? 'Dossier' : activeCategory ? categoryMeta[activeCategory].label : 'Archive';
 
   useEffect(() => {
     if (page === 'entry' && activeEntry !== requestedEntry && entryCategory) {
@@ -330,15 +315,10 @@ function AppContent({ initialArchive }: { initialArchive?: PublicArchive | null 
               {categoryMeta[category].label}
             </NavButton>
           ))}
-          {mode === 'public' && <>
-            <div className="nav-label" style={{ marginTop: 18 }}>Community</div>
-            <NavButton active={page === 'community'} icon={<Image size={16} />} onClick={() => navigate('/community')}>Community Art</NavButton>
-          </>}
-          {currentUser && <><div className="nav-label">Your console</div><NavButton active={page === 'profile'} icon={<Image size={16}/>} onClick={() => navigate('/profile')}>Profile / My Images</NavButton><NavButton active={page === 'notifications'} icon={<CircleDot size={16}/>} onClick={() => navigate('/notifications')}>Notifications</NavButton></>}
           {mode === 'editor' && <>
-            <div className="nav-label" style={{ marginTop: 18 }}>Community</div>
-            <NavButton active={page === 'community'} icon={<Image size={16} />} onClick={() => navigate('/community')}>Community Art</NavButton>
-            <NavButton active={page === 'notices'} icon={<FileText size={16}/>} onClick={() => navigate('/notices')}>Notices</NavButton><NavButton active={page === 'community-editor'} icon={<Check size={16} />} onClick={() => navigate('/community-editor')}>Moderation</NavButton>
+            <div className="nav-label" style={{ marginTop: 18 }}>Administration</div>
+            <NavButton active={page === 'profile'} icon={<Shield size={16}/>} onClick={() => navigate('/profile')}>Account settings</NavButton>
+            <NavButton active={page === 'notices'} icon={<FileText size={16}/>} onClick={() => navigate('/notices')}>Notices</NavButton>
             <div className="nav-label" style={{ marginTop: 18 }}>Maintenance</div>
             <NavButton active={page === 'editor'} icon={<Database size={16} />} onClick={() => navigate('/editor')}>Database Editor</NavButton>
             <NavButton active={page === 'terms'} icon={<FileText size={16} />} onClick={() => navigate('/terms')}>Edit Terms</NavButton>
@@ -347,7 +327,7 @@ function AppContent({ initialArchive }: { initialArchive?: PublicArchive | null 
         <div className="sidebar-foot">
           {mode === 'editor'
             ? <><strong>EDITOR MODE</strong><br />Signed in as {currentUser?.email || 'admin'}.<br />Changes affect the archive.<br /><button className="btn ghost mini" type="button" onClick={signOut} style={{ marginTop: 8 }}>Sign out</button></>
-            : <><strong>PUBLIC ARCHIVE</strong><br />Read-only archive access.<br />Community uploads are moderated.<br />{currentUser ? <button className="btn ghost mini" type="button" onClick={signOut} style={{ marginTop: 8 }}>Sign out ({currentUser.email})</button> : <button className="btn ghost mini" type="button" onClick={signInAsAdmin} style={{ marginTop: 8 }}><LogIn size={12} /> Sign in</button>}</>}
+            : <><strong>PUBLIC ARCHIVE</strong><br />Read-only archive access.<br />Managed by the archive team.<br />{currentUser ? <button className="btn ghost mini" type="button" onClick={signOut} style={{ marginTop: 8 }}>Sign out ({currentUser.email})</button> : <button className="btn ghost mini" type="button" onClick={signInAsAdmin} style={{ marginTop: 8 }}><LogIn size={12} /> Sign in</button>}</>}
         </div>
       </aside>
 
@@ -360,25 +340,19 @@ function AppContent({ initialArchive }: { initialArchive?: PublicArchive | null 
         <header className="topbar">
           <div className="crumb"><span>GSN /</span><strong>{currentTitle}</strong></div>
           <button className="search-trigger" type="button" data-testid="button-search-archive" onClick={() => setSearchOpen(true)}><Search size={15} /><span>Search the archive</span><kbd>⌘ K</kbd></button>
-          <MuteToggle /><AccountMenu key={currentUser?.id || "guest"} user={currentUser} onSignIn={signInAsAdmin} onSignOut={signOut} />
+          <MuteToggle />{mode === 'editor' ? <a className="btn ghost mini" href="/profile">Account settings</a> : <button className="btn ghost mini" onClick={signInAsAdmin}>Admin sign in</button>}
         </header>
         <main className={`content ${editing ? 'content-editing' : ''}`}><NoticeCard />
           {archiveSource !== 'remote' && <div className="notice-box" role="status"><strong>{archiveSource === 'unconfigured' ? 'Shared storage is not configured.' : 'Showing saved or built-in content. Updates could not be loaded.'}</strong><p>{lastSync ? `Last synced: ${new Date(lastSync).toLocaleString()}` : 'No successful sync has been recorded in this browser.'} Publishing is unavailable until the shared archive reconnects.</p><button className="btn" disabled={refreshing} onClick={() => setArchiveRefresh(value => value + 1)}>{refreshing ? 'Connecting…' : 'Retry connection'}</button></div>}
           {editing ? <EditorModal key={`${editing.category}/${editing.entry?.id || editing.entry?.name || 'new'}`} userId={currentUser?.id || 'anonymous'} initial={editing.entry} category={editing.category} onClose={() => setEditing(null)} onSave={saveEntry} /> : <>
-          {page === 'profile' && (currentUser ? <ProfilePage key={currentUser.id} user={currentUser} onChanged={() => setArtRefresh(v=>v+1)}><ProfileSubmission tags={imageTags} onSubmitted={() => setArtRefresh(v=>v+1)}/></ProfilePage> : <LoginRequired onSignIn={signInAsAdmin}/>)}
-          {page === 'upload' && (currentUser ? <ArtworkUploadPage tags={imageTags} onClose={() => navigate('/community')} onSubmitted={() => { setArtRefresh(v=>v+1); window.dispatchEvent(new Event('gsn-my-images-refresh')); setToast('Artwork submitted for review'); navigate('/profile'); }} /> : <LoginRequired onSignIn={signInAsAdmin}/>)}
-          {page === 'notifications' && (currentUser ? <NotificationsPage key={currentUser.id}/> : <LoginRequired onSignIn={signInAsAdmin}/>)}
-          {page === 'comments' && <CommentsPage key={`${parsed[1]}/${currentUser?.id || 'guest'}`} entryId={parsed[1] || ''} user={currentUser} isAdmin={mode === 'editor'} onSignIn={signInAsAdmin}/>}
+          {page === 'profile' && (currentUser && mode === 'editor' ? <ProfilePage key={currentUser.id} user={currentUser}/> : <LoginRequired onSignIn={signInAsAdmin}/>)}
           {page === 'notices' && mode === 'editor' && <NoticesAdmin/>}
-          {page === 'home' && <HomePage data={data} navigate={navigate} openEntry={openEntry} />}
+          {!allowedPages.includes(requestedPage) && <NotFound navigate={navigate}/>}{page === 'home' && requestedPage === 'home' && <HomePage data={data} navigate={navigate} openEntry={openEntry} />}
           {activeCategory && <CategoryPage category={activeCategory} data={data} openEntry={openEntry} />}
           {page === 'tier-list' && <TierListPage data={data} openEntry={openEntry} />}
           {page === 'compare' && <ComparePage data={data} openEntry={openEntry} />}
           {page === 'terms' && <TermsPage terms={terms} editable={mode === 'editor'} onSave={async (next) => { try { if (archiveSource !== 'remote') throw new Error('Reconnect before publishing terms.'); await saveArchiveEntry('settings', 'terms', next); setTerms(next); setToast('Terms of Use published to the shared archive'); } catch (error) { setToast(error instanceof Error ? `Terms save failed: ${error.message}` : 'Terms save failed'); } }} />}
           {mode === 'editor' && page === 'editor' && <EditorPage tags={imageTags} onAddTag={addImageTag} onRemoveTag={removeImageTag} data={data} onEdit={(category, entry) => setEditing({ category, entry })} onDelete={deleteEntry} onAdd={(category) => setEditing({ category })} />}
-          {page === 'community' && artError && <div className="notice-box" role="alert">{artError} <button className="btn" onClick={() => setArtRefresh(value => value + 1)}>Retry</button></div>}
-          {page === 'community' && <CommunityArtPage loading={artLoading} loadError={artError} isAdmin={mode === 'editor'} tags={imageTags} userId={currentUser?.id} onToast={setToast} artworks={artworks} onSubmitted={() => setArtRefresh((v) => v + 1)} />}
-          {mode === 'editor' && page === 'community-editor' && <CommunityModerationPage onChanged={() => setArtRefresh((v) => v + 1)} />}
           {page === 'entry' && entryCategory && <DossierPage category={entryCategory} name={activeEntry} data={data} onBack={() => window.history.length > 1 ? window.history.back() : navigate('/')} onEdit={mode === 'editor' ? (entry) => setEditing({ category: entryCategory, entry }) : undefined} />}
           {page === 'entry' && !entryCategory && <NotFound navigate={navigate} />}
           </>}
@@ -394,7 +368,7 @@ function AppContent({ initialArchive }: { initialArchive?: PublicArchive | null 
 }
 
 function NavButton({ active, icon, children, onClick, accent, count }: { active: boolean; icon: React.ReactNode; children: React.ReactNode; onClick: () => void; accent?: string; count?: number }) {
-  const destinations: Record<string, string> = { Overview: '/', 'Tier List': '/tier-list', Compare: '/compare', Terms: '/terms', 'Community Art': '/community', Moderation: '/community-editor', 'Database Editor': '/editor', 'Edit Terms': '/terms', Structures: '/infra' };
+  const destinations: Record<string, string> = { Overview: '/', 'Tier List': '/tier-list', Compare: '/compare', Terms: '/terms', 'Database Editor': '/editor', 'Edit Terms': '/terms', 'Account settings': '/profile', Notices: '/notices', Structures: '/infra' };
   const href = destinations[String(children)] || `/${String(children).toLowerCase()}`;
   return <a href={href} className={`nav-item ${active ? 'active' : ''}`} onClick={event => { if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); onClick(); }} aria-current={active ? 'page' : undefined} style={accent ? { '--nav-accent': accent } as React.CSSProperties : undefined} data-testid={`nav-${String(children).toLowerCase().replaceAll(' ', '-')}`}>
     <span className="nav-icon">{icon}</span><span className="nav-text">{children}</span>
@@ -435,7 +409,7 @@ function HomePage({ data, navigate, openEntry }: { data: DatabaseState; navigate
           <p>GSN Arena is a maintained dossier of feats, materials, structures, and combat potential across the Nikke frontier. Every number is a claim. Every claim can be examined.</p>
           <button className="btn primary" type="button" data-testid="button-browse-archive" onClick={() => navigate('/characters')} style={{ marginTop: 22 }}>Browse the archive <ArrowRight size={15} /></button>
         </div>
-        <div className="hero-visual"><img className="hero-logo" src="/gsn-logo.png" alt="GSN Arena insignia" /><span className="hero-stamp">CLASSIFIED / COMMUNITY RECORD</span></div>
+        <div className="hero-visual"><img className="hero-logo" src="/gsn-logo.png" alt="GSN Arena insignia" /><span className="hero-stamp">CLASSIFIED / ARCHIVE RECORD</span></div>
       </section>
       <CuboidTicker navigate={navigate} />
       <div className="stats-grid">
@@ -463,7 +437,7 @@ const tickerItems: { icon: typeof Radar; text: string; to: string }[] = [
   { icon: BookOpen, text: 'Read dossiers on your favorite Nikkes', to: '/characters' },
   { icon: Swords, text: 'Explore what your Units can really do', to: '/compare' },
   { icon: Lightbulb, text: 'Dig deep into theories surrounding the world of Goddess of Victory', to: '/theories' },
-  { icon: Palette, text: 'Browse art from across the Nikke universe', to: '/community' },
+  { icon: BookOpen, text: 'Explore the archive definitions and terminology', to: '/appendix' },
 ];
 function CuboidTicker({ navigate }: { navigate: (path: string) => void }) {
   const [index, setIndex] = useState(0);
@@ -608,7 +582,7 @@ function ComparePage({ data }: { data: DatabaseState; openEntry: (category: Cate
     <div className="eyebrow compare-accent">Simulation chamber / 1v1 / for fun</div>
     <h1 className="display-title">Compare <em>combatants</em></h1>
     <p className="lede">Pick two filed subjects and let the archive decide.</p>
-    <div className="notice-box"><p><strong>Heads up: </strong>for now Compare picks a random winner. It is just for fun, not a power scale. Real rankings live on the Tier List.</p><div className="row-actions"><button className="btn ghost" type="button" onClick={() => navigate('/community')}>Share an idea</button><button className="btn ghost" type="button" onClick={() => navigate('/tier-list')}>Open Tier List</button></div></div>
+    <div className="notice-box"><p><strong>Heads up: </strong>for now Compare picks a random winner. It is just for fun, not a power scale. Real rankings live on the Tier List.</p><div className="row-actions"><button className="btn ghost" type="button" onClick={() => navigate('/tier-list')}>Open Tier List</button></div></div>
     <div className="gsn-upgrade-arena">{fighter('a', left, 'COMBATANT A')}{fighter('b', right, 'COMBATANT B')}<div className="gsn-upgrade-vs"><span>VS</span></div></div>
     {winner && loser && <div className="gsn-upgrade-result"><div className="gsn-upgrade-winner"><div className="crown" aria-hidden="true">♛</div><div className="word">Winner!</div><CombatantAvatar entry={winner.item} category={winner.category} size="big" /><div className="name">{winner.item.name}</div><small>chosen at random</small></div><div className="gsn-upgrade-narrative">The archive rolled the dice and {winner.item.name} beat {loser.item.name}. It is a coin flip for now, so don’t start a war over it.</div><div className="gsn-upgrade-score"><button className="btn ghost" type="button" onClick={() => setRoll(Math.random())}>Roll again</button></div></div>}
   </div>;
@@ -616,10 +590,24 @@ function ComparePage({ data }: { data: DatabaseState; openEntry: (category: Cate
 
 function DossierPage({ category, name, data, onBack, onEdit }: { category: Category; name: string; data: DatabaseState; onBack: () => void; onEdit?: ((entry: Entry) => void) | undefined }) {
   const entry = data[category].find((item) => item.name === name);
+  const voiceKey = `${category}/${entry?.id || name}`;
+  const voiceSignature = JSON.stringify(entryLines(entry));
+  const voiceName = entry?.name;
+  const voiceImage = entry?.image;
+  const playedVoice = useRef('');
   useEffect(() => {
-    const line = rollVoice(entryLines(entry));
-    if (entry && line) playVoice({ name: entry.name, image: entry.image, category, line });
-  }, [category, name]);
+    let cancelled = false;
+    // Wait until sibling listeners mount. Cancel StrictMode's discarded effect
+    // before selecting a line, so one dossier open advances exactly once.
+    queueMicrotask(() => {
+      const identity = `${voiceKey}:${voiceSignature}`;
+      if (cancelled || isMuted() || !voiceName || voiceSignature === '[]' || playedVoice.current === identity) return;
+      playedVoice.current = identity;
+      const line = nextVoice(JSON.parse(voiceSignature) as VoiceLine[], voiceKey);
+      if (line) playVoice({ name: voiceName, image: voiceImage, category, line });
+    });
+    return () => { cancelled = true; };
+  }, [category, voiceKey, voiceSignature, voiceName, voiceImage]);
   if (!entry) return <NotFound navigate={onBack} />;
   const meta = categoryMeta[category];
   const feats = visibleFeats(entry);
@@ -632,9 +620,8 @@ function DossierPage({ category, name, data, onBack, onEdit }: { category: Categ
     {!isTheory(category) && feats.length > 0 && <div className="specs">{feats.map(({ key, label, value, source }) => <div className="spec" key={key}><div className="spec-label">{label}</div><div className="spec-value">{value}</div><FeatEvidence source={source} /></div>)}</div>}
     {entry.extra?.length ? <><div className="block-title">Additional measurements</div><div className="extra-grid">{entry.extra.map((item) => <div className="spec" key={item.label}><div className="spec-label">{item.label}</div><div className="spec-value">{item.value}</div></div>)}</div></> : null}
     {entry.hypothetical && !isTheory(category) ? <HypotheticalSummary key={`${category}/${entry.id || entry.name}`}><EntryBody text={entry.hypothetical} data={data} /></HypotheticalSummary> : null}
-    {entry.notes?.length ? <><div className="block-title">Notes</div><div className="archive-notes">{entry.notes.map((note, index) => <div className="archive-note" key={index}><span className="note-marker">{note.marker}</span><div><strong>{note.author || 'Community note'}</strong><p><ReferenceText text={note.text} data={data} /></p></div></div>)}</div></> : null}
-    {entry.id && <a className="comment-section-link" href={`/comments/${entry.id}`}>》Comment section <MessageCount entryId={entry.id}/> <ArrowRight size={18}/></a>}
-    <div className="block-title">Record note</div><p style={{ color: 'var(--muted)', font: '12px/1.7 var(--font-mono)' }}>This dossier is a community-maintained interpretation. Approved records can be revised from the database editor.</p>
+    {entry.notes?.length ? <><div className="block-title">Notes</div><div className="archive-notes">{entry.notes.map((note, index) => <div className="archive-note" key={index}><span className="note-marker">{note.marker}</span><div><strong>{note.author || 'Archive note'}</strong><p><ReferenceText text={note.text} data={data} /></p></div></div>)}</div></> : null}
+    <div className="block-title">Record note</div><p style={{ color: 'var(--muted)', font: '12px/1.7 var(--font-mono)' }}>This dossier is maintained by the archive team. Records can be revised by the administrators.</p>
   </article>;
 }
 
@@ -648,7 +635,7 @@ function EditorPage({ data, onEdit, onDelete, onAdd, tags, onAddTag, onRemoveTag
     <div className="toolbar"><select className="select-input" value={category} onChange={(event) => setCategory(event.target.value as Category)} aria-label="Editor category" data-testid="select-editor-category">{categories.map((item) => <option key={item} value={item}>{categoryMeta[item].label}</option>)}</select><button className="btn primary" type="button" onClick={() => onAdd(category)} data-testid="button-add-entry"><Plus size={15} /> New entry</button></div>
     <div className="editor-list">{data[category].map((entry) => <div className="editor-row" key={entry.name}><div className="editor-row-main"><div className="editor-row-name">{entry.name}</div><div className="editor-row-meta">{entry.cls} / {entry.tier || 'Undefined'} / {entry.tag}</div></div><div className="row-actions"><button className="btn ghost" type="button" onClick={() => onEdit(category, entry)} data-testid={`button-edit-${entry.name.replaceAll(' ', '-').toLowerCase()}`}><Pencil size={13} /> Edit</button><button className="btn danger" type="button" onClick={() => onDelete(category, entry.name)} data-testid={`button-delete-${entry.name.replaceAll(' ', '-').toLowerCase()}`}><Trash2 size={13} /> Remove</button></div></div>)}</div>
     {!data[category].length && <EmptyState text="This sector is empty. Start a new record." />}
-    <div className="section-head" style={{ marginTop: 36 }}><div><div className="eyebrow">Image library</div><h2>Predefined tags</h2></div><p>Used on archive and community images</p></div>
+    <div className="section-head" style={{ marginTop: 36 }}><div><div className="eyebrow">Image library</div><h2>Predefined tags</h2></div><p>Used on archive images</p></div>
     <div className="tag-picker">{tags.length ? tags.map((t) => <span className="tag-chip on" key={t}>#{t} <button type="button" className="tag-x" aria-label={`Remove ${t}`} onClick={() => onRemoveTag(t)}><X size={11} /></button></span>) : <span className="tag-empty">No tags yet.</span>}
       <span className="tag-new"><input className="text-input" value={newTag} onChange={(e) => setNewTag(e.target.value)} placeholder="New tag" /><button type="button" className="btn primary mini" onClick={() => { onAddTag(newTag); setNewTag(''); }}><Plus size={12} /> Add tag</button></span></div>
   </>;
@@ -703,9 +690,8 @@ function EditorModal({ initial, category, onClose, onSave, userId }: { userId: s
   const close = () => { if (!saving && !evidenceBusy && (!(dirty || draft.candidate) || window.confirm('Discard your unsaved dossier changes and local recovery draft?'))) { draft.clear(); onClose(); } };
   const setField = (key: keyof Entry, value: any) => setForm((previous) => ({ ...previous, [key]: value }));
   const [lines, setLinesState] = useState<(VoiceLine | undefined)[]>(() => entryLines(initial));
-  const percents = voicePercents(lines.length);
   const setLines = (next: (VoiceLine | undefined)[]) => { setLinesState(next); setForm((p) => ({ ...p, voices: next.filter((x): x is VoiceLine => !!x?.url), victoryVoice: victoryLine(p), voiceVersion: 2 })); };
-  const addNote = () => setField('notes', [...(form.notes || []), { marker: '○', author: 'Community', text: '' }]);
+  const addNote = () => setField('notes', [...(form.notes || []), { marker: '○', author: 'Archive team', text: '' }]);
   const updateNote = (index: number, patch: Partial<ArchiveNote>) => setField('notes', (form.notes || []).map((n, i) => i === index ? { ...n, ...patch } : n));
   const submit = async (event: React.FormEvent) => { event.preventDefault(); if (saving || evidenceBusy) return; if (draft.candidate) { setSaveError('Choose Recover draft or Discard stored draft before publishing.'); return; } if (!form.name.trim() || !form.cls.trim() || !plainEntryText(form.summary)) { setSaveError('Name, classification and actual summary are required.'); return; } if (issues.length && !window.confirm(`Reference check: ${issues.map(issue => `${issue.name}: ${issue.message}`).join('\n')}\n\nPublish anyway?`)) return; setSaving(true); setSaveError(''); try { await onSave(category, { ...form, name: form.name.trim(), cls: form.cls.trim(), summary: form.summary.trim() }, initial?.name); draft.clear(); } catch (error) { setSaveError(error instanceof Error ? error.message : 'Save failed. Your draft has been kept.'); } finally { setSaving(false); } };
   if (documentField) return <RichEntryEditor key={documentField} draftStatus={draft.status} onDraftChange={html => { if (!draft.candidate) draft.save({ ...form, [documentField]: html }); }} title={`${form.name || 'New dossier'} / ${documentField === 'summary' ? 'Actual summary' : 'Hypothetical summary'}`} value={form[documentField] || ''} onBack={() => { draft.save(form); setDocumentField(null); }} onSave={(html) => { setField(documentField, html); draft.save({ ...form, [documentField]: html }); setDocumentField(null); }} />;
@@ -724,12 +710,12 @@ function EditorModal({ initial, category, onClose, onSave, userId }: { userId: s
     </div></details><details className="editor-section" open><summary>Images</summary><div className="form-grid">
     <div className="field full"><label>Primary profile image</label><div className="image-pick-row">{form.image ? <img className="image-thumb profile-preview" src={form.image} alt="" /> : null}<CropImageButton outputSize={1024} label="Change portrait image" onCropped={async file=>{const url=await uploadArchiveImage(file);setField('image',url);}}/><button type="button" className="btn ghost" onClick={()=>setField('image','/gsn-logo.png')}>Use GSN Arena logo</button>{form.image ? <button type="button" className="btn ghost mini" onClick={() => setField('image', '')}><X size={12}/> Remove</button> : null}</div></div>
     </div></details><details className="editor-section"><summary>Voice lines</summary><div className="form-grid">
-    <div className="field full"><div className="edit-section-label">Voice lines</div><div className="note-guide">Add as many lines as you like. One plays when someone opens this entry — line 1 is the most common and the chances adjust automatically. The victory line plays when this character wins in Compare.</div>
-      {lines.map((line, i) => <VoiceSlot key={i} label={`Line ${i + 1} · ${percents[i]}% chance`} value={line} onChange={(v) => setLines(v ? lines.map((x, j) => j === i ? v : x) : lines.filter((_, j) => j !== i))} />)}
+    <div className="field full"><div className="edit-section-label">Voice lines</div><div className="note-guide">Add as many lines as you like. One plays when someone opens this entry — lines play in order, then repeat from line 1. The victory line plays when this character wins in Compare.</div>
+      {lines.map((line, i) => <VoiceSlot key={i} label={`Line ${i + 1} · sequence position ${i + 1}`} value={line} onChange={(v) => setLines(v ? lines.map((x, j) => j === i ? v : x) : lines.filter((_, j) => j !== i))} />)}
       <button type="button" className="btn ghost" onClick={() => setLines([...lines, undefined])}><Plus size={13}/> Add voice line</button>
       {!isTheory(category) && <VoiceSlot label="Victory line · plays on Compare win" value={victoryLine(form)} onChange={(v) => setForm((p) => ({ ...p, voices: lines.filter((x): x is VoiceLine => !!x?.url), victoryVoice: v, voiceVersion: 2 }))} />}</div>
     </div></details><details className="editor-section"><summary>Notes</summary><div className="form-grid">
-    <div className="field full"><div className="editor-section-head"><label>Notes</label><button type="button" className="btn ghost" onClick={addNote}><Plus size={13}/> Add note</button></div><div className="note-guide">Seth marker: ♤ · Community markers: ○ ● □ ♡ ◇ ♧ ☆ ¤</div>{(form.notes || []).map((note, index) => <div className="editor-subrow note-row" key={index}><select className="select-input note-marker-select" value={note.marker} onChange={e => updateNote(index,{marker:e.target.value as NoteMarker})}>{noteMarkers.map(m=><option key={m}>{m}</option>)}</select><input className="text-input" value={note.author} onChange={e => updateNote(index,{author:e.target.value})} placeholder="Author" /><textarea className="text-area" value={note.text} onChange={e => updateNote(index,{text:e.target.value})} placeholder="Note text. Use *Term* for references." /></div>)}</div>
+    <div className="field full"><div className="editor-section-head"><label>Notes</label><button type="button" className="btn ghost" onClick={addNote}><Plus size={13}/> Add note</button></div><div className="note-guide">Seth marker: ♤ · Other markers: ○ ● □ ♡ ◇ ♧ ☆ ¤</div>{(form.notes || []).map((note, index) => <div className="editor-subrow note-row" key={index}><select className="select-input note-marker-select" value={note.marker} onChange={e => updateNote(index,{marker:e.target.value as NoteMarker})}>{noteMarkers.map(m=><option key={m}>{m}</option>)}</select><input className="text-input" value={note.author} onChange={e => updateNote(index,{author:e.target.value})} placeholder="Author" /><textarea className="text-area" value={note.text} onChange={e => updateNote(index,{text:e.target.value})} placeholder="Note text. Use *Term* for references." /></div>)}</div>
   </div></details>
     <details className="editor-section"><summary>Revision history</summary><RevisionHistory entryId={initial?.id} onRestore={data => {
       if (draft.candidate) { setSaveError('Recover or discard the stored draft before restoring a revision.'); return; }
@@ -750,7 +736,7 @@ function ReferenceText({ text }: { text: string; data: DatabaseState }) {
 }
 
 function EmailAuthModal({ onClose }: { onClose: () => void }) {
-  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
+  const [mode, setMode] = useState<'signin' | 'forgot'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -765,11 +751,6 @@ function EmailAuthModal({ onClose }: { onClose: () => void }) {
         const { error: err } = await supabase.auth.signInWithPassword({ email, password });
         if (err) throw err;
         onClose();
-      } else {
-        const { error: err } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin } });
-        if (err) throw err;
-        setMessage('Account created. Check your email to confirm, then sign in.');
-        setMode('signin');
       }
     } catch (err: any) {
       setError(err?.message || 'Something went wrong. Try again.');
@@ -778,17 +759,15 @@ function EmailAuthModal({ onClose }: { onClose: () => void }) {
     }
   };
   return <div className="modal-backdrop"><div className="modal">
-    <div className="modal-head"><h2>{mode === 'forgot' ? 'Recover password' : mode === 'signin' ? 'Sign in' : 'Create account'}</h2><button className="btn ghost" type="button" aria-label="Close sign in" onClick={onClose}><X size={17} /></button></div>
+    <div className="modal-head"><h2>{mode === 'forgot' ? 'Recover password' : 'Admin sign in'}</h2><button className="btn ghost" type="button" aria-label="Close sign in" onClick={onClose}><X size={17} /></button></div>
     <div className="modal-body">{mode === 'forgot' ? <><ForgotPasswordForm initialEmail={email}/><button type="button" className="btn ghost" onClick={()=>setMode('signin')}>Back to sign in</button></> : <form onSubmit={submit}><div className="form-grid">
       <div className="field full"><label>Email</label><input className="text-input" type="email" value={email} onChange={e => setEmail(e.target.value)} required autoComplete="email" /></div>
-      <div className="field full"><label>Password</label><input className="text-input" type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={mode === 'signup' ? 8 : 6} autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} /></div>
+      <div className="field full"><label>Password</label><input className="text-input" type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} /></div>
       {error && <div className="field full" style={{ color: 'var(--red)', font: '12px var(--font-mono)' }}>{error}</div>}
       {message && <div className="field full" style={{ color: 'var(--blue)', font: '12px var(--font-mono)' }}>{message}</div>}
       <div className="field full" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <button className="btn primary" type="submit" disabled={busy}>{busy ? 'Working…' : mode === 'signin' ? 'Sign in' : 'Create account'}</button>
-        <button className="btn ghost" type="button" onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(''); setMessage(''); }}>
-          {mode === 'signin' ? 'Need an account? Sign up' : 'Have an account? Sign in'}
-        </button>
+        <button className="btn primary" type="submit" disabled={busy}>{busy ? 'Working…' : 'Sign in'}</button>
+
       </div>
       <button className="btn ghost" type="button" disabled={busy} onClick={() => {setMode('forgot');setError('');setMessage('');}}>Forgot password?</button>
     </div></form>}</div>
@@ -804,107 +783,6 @@ function TermsPage({ terms, editable, onSave }: { terms: LegalTerms; editable: b
 }
 
 
-function CommunityArtPage({ artworks, onSubmitted, tags, userId, onToast, isAdmin, loading, loadError }: { loading: boolean; loadError: string; isAdmin: boolean; artworks: Artwork[]; onSubmitted: () => void; tags: string[]; userId?: string | undefined; onToast: (m: string) => void }) {
-  const { filters, update } = useGalleryFilters();
-  const tab = filters.rating;
-  const setTab = (rating: ArtworkRating) => update({ rating });
-  const [, navigate] = useLocation();
-  const [showNsfwNotice, setShowNsfwNotice] = useState(() => filters.rating === 'nsfw');
-  useEffect(() => { if (filters.rating === 'nsfw') setShowNsfwNotice(true); }, [filters.rating]);
-  const visible = filterArtworks(artworks, filters);
-  const [showAuth, setShowAuth] = useState(false);
-  const signIn = () => { if (supabase) setShowAuth(true); };
-  const PER_PAGE = 24;
-  const [pageNo, setPageNo] = useState(0);
-  useEffect(() => setPageNo(0), [filters]);
-  const pages = Math.max(1, Math.ceil(visible.length / PER_PAGE));
-  const current = Math.min(pageNo, pages - 1);
-  const shown = tab === 'nsfw' && showNsfwNotice ? [] : visible.slice(current * PER_PAGE, current * PER_PAGE + PER_PAGE);
-  const goPage = (n: number) => { setPageNo(n); window.scrollTo({ top: 0, behavior: 'smooth' }); };
-  return <>
-    <div className="eyebrow" style={{ color: '#d93f7a' }}>Community archive / artist submissions</div>
-    <h1 className="display-title">Community <em>Art</em></h1>
-    <p className="lede">Artwork submitted by the community. GSN Arena separates general and mature material so visitors can choose what they see.</p>
-    <div className="community-toolbar">
-      <div className="art-tabs">
-        <button className={`btn ${tab === 'sfw' ? 'primary' : 'ghost'}`} onClick={() => setTab('sfw')}>General</button>
-        <button className={`btn ${tab === 'nsfw' ? 'primary' : 'ghost'}`} onClick={() => { setTab('nsfw'); setShowNsfwNotice(true); }}>Mature / NSFW</button>
-      </div>
-      <div className="community-actions">
-        {supabase && !userId && <button className="btn ghost" onClick={signIn}><LogIn size={14} /> Sign in</button>}
-        <button className="btn primary" onClick={() => navigate('/upload')}><Upload size={14} /> Submit artwork</button>
-      </div>
-    </div>
-    {tab === 'nsfw' && <div className="content-warning"><AlertTriangle size={17} /><div><strong>Mature content section</strong><br /><span>This section may contain sexually explicit or otherwise adult artwork submitted by users. By entering this section, you acknowledge the nature of the material and choose to view it.</span></div></div>}
-    <GalleryFilterBar filters={filters} update={update} tags={tags} artworks={artworks} resultCount={visible.length} />
-    {loading && <p className="note-guide" role="status">Loading artwork…</p>}
-    <div className="art-grid">
-      {shown.length ? shown.map((art) => <article className="art-card" key={art.id}><ImageViewerLink src={art.image_url} artworkId={art.id} title={art.title} credit={art.artist_name} mature={art.rating === 'nsfw'} className="art-open"><img src={art.image_url} alt={art.title} loading="lazy" /></ImageViewerLink><div className="art-card-body"><div className="art-card-title">{art.title}</div><div className="art-card-meta">by {art.artist_name}</div>{art.description && <p>{art.description}</p>}{art.tags?.length ? <div className="art-card-meta">{art.tags.map((t) => `#${t}`).join(' ')}</div> : null}{userId && (isAdmin || art.user_id === userId) ? <a className="btn ghost mini" href={isAdmin?'/community-editor':'/profile'}>Manage artwork</a> : null}</div></article>) : <div className="empty-state"><p>{loading ? 'Loading the gallery…' : loadError && !artworks.length ? 'The gallery could not be loaded. Use Retry above.' : artworks.some(art => art.rating === tab) ? 'No artwork matches these filters. Try Match any or remove a tag.' : 'No approved artwork in this section yet.'}</p>{(filters.tags.length > 0 || filters.artist) && <button className="btn" onClick={() => update({ ...defaultGalleryFilters, rating: tab })}>Clear filters</button>}</div>}
-    </div>
-    {pages > 1 && <nav className="pager" aria-label="Artwork pages"><button type="button" className="btn ghost mini" disabled={current === 0} onClick={() => goPage(current - 1)}><ArrowLeft size={12} /> Prev</button>{Array.from({ length: pages }, (_, i) => <button type="button" key={i} className={`btn mini ${i === current ? 'primary' : 'ghost'}`} aria-current={i === current ? 'page' : undefined} onClick={() => goPage(i)}>{i + 1}</button>)}<button type="button" className="btn ghost mini" disabled={current >= pages - 1} onClick={() => goPage(current + 1)}>Next <ArrowRight size={12} /></button></nav>}
-
-    {showAuth && <EmailAuthModal onClose={() => setShowAuth(false)} />}
-    {showNsfwNotice && <div className="modal-backdrop"><div className="warning-modal"><AlertTriangle size={28} /><h2>Mature content ahead</h2><p>This section is reserved for adult/NSFW artwork. Nothing here is presented as part of the core lore archive. If you do not want to view mature material, choose General instead.</p><div className="row-actions"><button className="btn ghost" onClick={() => { setTab('sfw'); setShowNsfwNotice(false); }}>Back to General</button><button className="btn primary" onClick={() => setShowNsfwNotice(false)}>I understand</button></div></div></div>}
-  </>;
-}
-
-function HashTagInput({ tags, value, onChange }: { tags: string[]; value: string[]; onChange: (v: string[]) => void }) {
-  return <TagSearch tags={tags} selected={value} onChange={onChange} />;
-}
-
-function MessageCount({entryId}: {entryId:string}) { const [count,setCount]=useState<number|null>(null); useEffect(()=>{let stale=false; if(supabase)void supabase.from('entry_comments').select('id',{count:'exact',head:true}).eq('entry_id',entryId).is('deleted_at',null).then(({count,error})=>{if(!stale&&!error)setCount(count);});return()=>{stale=true;};},[entryId]);return count===null?null:<span>· {count}</span>; }
-function ProfileSubmission(_props: {tags:string[];onSubmitted:()=>void}) {const [, navigate] = useLocation();return <><p>Upload up to 13 images. Submissions stay private until approved. Artist credit can differ from your account username.</p><button className="btn primary" onClick={()=>navigate('/upload')}><Upload size={15}/> Submit artwork</button></>;}
-
-function ArtworkUploadPage({ onClose, onSubmitted, tags }: { onClose: () => void; onSubmitted: () => void; tags: string[] }) {
-  const objectUrls = useRef(new Set<string>());
-  useEffect(() => { const urls = objectUrls.current; return () => { urls.forEach(url => URL.revokeObjectURL(url)); }; }, []);
-  useEffect(() => { let stale=false; if (supabase) void supabase.auth.getUser().then(async ({data}) => { if(data.user){ const profile=await loadProfile(data.user.id); if(!stale)setArtist(previous=>previous||profile?.username||''); } }).catch(()=>{ /* Username can still be entered manually. */ }); return()=>{stale=true;}; }, []);
-  const [artist, setArtist] = useState('');
-  const [description, setDescription] = useState('');
-  const [rating, setRating] = useState<ArtworkRating>('sfw');
-  const [items, setItems] = useState<{ file: File; tags: string[]; title: string; url: string }[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  useBlocker({shouldBlockFn:()=>busy,enableBeforeUnload:busy});
-  const addFiles = (list: FileList | null) => { if (!list || busy) return; const remaining=13-items.length; const files=Array.from(list); if(files.length>remaining)setError('Maximum 13 images — extras were skipped.'); const next=files.slice(0,remaining).map(file=>{const url=URL.createObjectURL(file);objectUrls.current.add(url);return {file,tags:[] as string[],title:'',url};});setItems([...items,...next]); };
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault(); setError('');
-    if (!artist.trim() || !items.length || items.some((item) => !item.title.trim())) { setError('Please provide an artist username and a title for each image.'); return; }
-    if (items.some((i) => i.file.size > 12 * 1024 * 1024)) { setError('Please keep each image under 12 MB.'); return; }
-    setBusy(true);
-    try { await submitArtBatch({ title: '', artist_name: artist.trim(), description: description.trim(), rating, onUploaded: file => { setItems(previous => previous.filter(item => { if(item.file===file){URL.revokeObjectURL(item.url);objectUrls.current.delete(item.url);return false;}return true;}));window.dispatchEvent(new Event('gsn-my-images-refresh')); }, items: items.map(({ file, tags: t, title: imageTitle }) => ({ file, tags: t, title: imageTitle })) }); onSubmitted(); }
-    catch (err) { setError((err instanceof Error ? err.message : 'Upload failed.') + ' Unsent images remain here; submitted images are in My Images.'); }
-    finally { setBusy(false); }
-  };
-  const [dragging, setDragging] = useState(false);
-  return <form className="upload-page" onSubmit={submit}>
-    <button type="button" className="btn ghost back-link" disabled={busy} onClick={onClose}><ArrowLeft size={15} /> Back to community art</button>
-    <div className="eyebrow" style={{ color: '#d93f7a' }}>Community archive / new submission</div>
-    <h1 className="display-title">Upload <em>Artwork</em></h1>
-    <p className="lede">Add up to 13 images. Give each one its own title and tags. Submissions wait for moderation.</p>
-    <section className="upload-card"><h2 className="upload-step">01 · Submission details</h2><div className="upload-fields">
-      <div className="field"><label htmlFor="art-credit">Artist username</label><input className="text-input" maxLength={100} disabled={busy} id="art-credit" value={artist} onChange={e => setArtist(e.target.value)} required /></div>
-      <div className="field"><label htmlFor="art-rating">Section</label><select className="select-input" id="art-rating" disabled={busy} value={rating} onChange={e => setRating(e.target.value as ArtworkRating)}><option value="sfw">General</option><option value="nsfw">Mature / NSFW</option></select></div>
-      <div className="field full"><label htmlFor="art-description">Description (shared by all images)</label><textarea className="text-area" maxLength={1000} disabled={busy} id="art-description" value={description} onChange={e => setDescription(e.target.value)} placeholder="Optional context or caption" /></div>
-    </div></section>
-    <section className="upload-card"><h2 className="upload-step">02 · Images ({items.length}/13)</h2>
-      <label className={`upload-drop ${dragging ? 'is-dragging' : ''} ${busy || items.length >= 13 ? 'is-disabled' : ''}`} onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={e => { e.preventDefault(); setDragging(false); addFiles(e.dataTransfer.files); }}>
-        <Upload size={26} /><strong>Tap to choose images</strong><span>or drag them here · PNG, JPG, WEBP, GIF · max 12 MB each</span>
-        <input id="art-files" type="file" hidden multiple accept="image/png,image/jpeg,image/webp,image/gif" disabled={busy || items.length >= 13} onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
-      </label>
-      <div className="upload-grid">{items.map((it, i) => <div className="upload-item" key={it.url}>
-        <div className="upload-thumb"><img src={it.url} alt="" /><button type="button" disabled={busy} aria-label={`Remove image ${i + 1}`} className="btn ghost mini" onClick={() => { URL.revokeObjectURL(it.url); objectUrls.current.delete(it.url); setItems(items.filter((_, j) => j !== i)); }}><X size={12} /></button></div>
-        <div className="upload-item-fields"><label>Image {i + 1} title</label><input className="text-input" maxLength={150} disabled={busy} value={it.title} placeholder="Title for this image" aria-label={`Title for image ${i + 1}`} onChange={(e) => { const v = e.target.value; setItems(prev => prev.map((x, j) => j === i ? { ...x, title: v } : x)); }} />
-        <label>Tags</label><HashTagInput tags={tags} value={it.tags} onChange={(v) => setItems(prev => prev.map((x, j) => j === i ? { ...x, tags: v } : x))} /></div>
-      </div>)}</div>
-    </section>
-    {error && <div className="form-error" role="alert">{error}</div>}
-    <div className="upload-actions"><button className="btn ghost" type="button" disabled={busy} onClick={onClose}>Cancel</button><button className="btn primary" type="submit" disabled={busy || !items.length}>{busy ? 'Uploading…' : `Submit ${items.length || ''} for review`}</button></div>
-  </form>;
-}
-
-function CommunityModerationPage({ onChanged }: { onChanged: () => void }) { return <ModerationPage onChanged={onChanged}/>; }
-
 function SearchModal({ data, term, setTerm, onClose, onOpen }: { data: DatabaseState; term: string; setTerm: (value: string) => void; onClose: () => void; onOpen: (category: Category, name: string) => void }) {
   const [sector, setSector] = useState('all');
   const results = useMemo(() => allEntries(data).filter(({ category }) => sector === 'all' || category === sector).filter(({ item }) => `${item.name} ${item.cls} ${plainEntryText(item.summary)} ${(item.images || []).flatMap((im) => (im.tags || []).map((t) => '#' + t + ' ' + t)).join(' ')}`.toLowerCase().includes(term.trim().toLowerCase())).slice(0, 20), [data, term, sector]);
@@ -912,7 +790,7 @@ function SearchModal({ data, term, setTerm, onClose, onOpen }: { data: DatabaseS
 }
 
 function NotFound({ navigate }: { navigate: (path: string) => void }) {
-  return <div className="empty-state"><FolderArchive size={30} /><div style={{ font: '700 28px var(--font-display)', color: 'var(--ink)', textTransform: 'uppercase', marginBottom: 8 }}>File not found</div><div>The requested archive path does not exist.</div><button className="btn primary" type="button" onClick={() => navigate('/')} style={{ marginTop: 20 }} data-testid="button-return-overview">Return to overview</button></div>;
+  return <div className="empty-state"><FolderArchive size={30} /><h1 style={{ font: '700 28px var(--font-display)', color: 'var(--ink)', textTransform: 'uppercase', marginBottom: 8 }}>File not found</h1><div>The requested archive path does not exist.</div><button className="btn primary" type="button" onClick={() => navigate('/')} style={{ marginTop: 20 }} data-testid="button-return-overview">Return to overview</button></div>;
 }
 
 export function GsnArenaApp({ initialArchive }: { initialArchive?: PublicArchive | null | undefined }) {

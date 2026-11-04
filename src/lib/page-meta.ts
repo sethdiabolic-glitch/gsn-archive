@@ -10,14 +10,10 @@ const labels: Record<string, string> = {
   appendix: "Appendix",
   "tier-list": "Tier List",
   compare: "Compare Units",
-  community: "Community Art",
   terms: "Terms of Use",
-  profile: "Profile",
-  notifications: "Notifications",
+  profile: "Admin Account",
   notices: "Notices",
-  comments: "Entry Comments",
   editor: "Database Editor",
-  "community-editor": "Art Moderation",
 };
 
 export function pageMeta(path: string, archive?: PublicArchive | null) {
@@ -25,7 +21,7 @@ export function pageMeta(path: string, archive?: PublicArchive | null) {
   const section = segments[0] || "";
   let name = labels[section] || "Intelligence Archive";
   let description =
-    "Explore GSN Arena’s NIKKE dossiers, feats, tier rankings, theories, and community artwork.";
+    "Explore GSN Arena’s NIKKE dossiers, feats, tier rankings, theories and reference definitions.";
   if (section === "entry" && segments[2]) {
     try {
       name = decodeURIComponent(segments.slice(2).join("/"));

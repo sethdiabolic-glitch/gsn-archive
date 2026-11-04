@@ -21,7 +21,11 @@ test("database migration: atomic renames, aliases, collisions, permissions, and 
     grant usage on schema auth, storage to authenticated, anon;
     grant select, delete on storage.objects to authenticated;
   `);
-  for (const file of fs.readdirSync("supabase/migrations").sort()) {
+  // Historical migration contract; the archive-only release has its own full-chain test.
+  for (const file of fs
+    .readdirSync("supabase/migrations")
+    .filter((file) => file < "20261104100000")
+    .sort()) {
     if (file === "20261017100000_entry_revisions.sql") {
       await db.exec(
         `insert into archive_entries(category,name,data) values ('characters','Baseline','{"summary":"Before history"}'), ('settings','terms','{"content":"Terms"}');`,

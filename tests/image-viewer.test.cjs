@@ -30,7 +30,7 @@ test("image URLs allow HTTP/HTTPS only, never scripts, data or embedded credenti
 });
 test("return links cannot become external redirects or recursive viewer loops", () => {
   for (const back of ["//evil.example", "/\\evil.example", "https://evil.example", "/image?src=x"])
-    assert.equal(images.safeImageBack(back), "/community");
+    assert.equal(images.safeImageBack(back), "/");
   assert.equal(
     images.safeImageBack("/community?tag=Anis&match=any"),
     "/community?tag=Anis&match=any",

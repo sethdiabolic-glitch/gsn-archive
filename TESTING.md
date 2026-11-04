@@ -1,3 +1,41 @@
+# Current release: two-admin archive (2026-11-04)
+
+This section supersedes the historical release notes below, especially gallery, public accounts, moderation, discussions and notification instructions. Those features are retired; do not use their old acceptance checklists.
+
+- Desktop fine-pointer navigation is a 72px icon rail expanding to 248px on hover or **keyboard-visible focus**. It overlays content without shifting it. Mouse-click focus does not pin the sidebar open. No pin/toggle was added. Touch/mobile retains its existing menu and backdrop controls. Reduced-motion preferences disable rail transitions.
+- Dossier voice lines play in stored order, independently per dossier, wrapping after the last line. The cursor is session-local and resets on reload or a changed line list. Muted visits do not consume a line. Selection is deferred/cancelled safely across React's development effect checks; delayed data loads can play the first line after loading. Compare retains its dedicated victory line.
+- Removed gallery, submissions, moderation, My Images/activity, comments, private notifications, public profiles and sign-up controls from the app. Old participation routes show File not found; old artwork-ID viewers are unavailable. Public archive image viewers, dossier images/audio editing, admin sign-in/settings/recovery, default GSN avatars, manual cropping and site notices remain.
+
+## Deployment boundary
+
+With user approval, **`supabase/migrations/20261104100000_archive_only.sql` was applied live on 2026-11-04** to the existing GSN project. Supabase recorded it as `20261104152028_archive_only`. **Do not apply it again or rerun old migrations.** The frontend changes still need merging/publishing; any remaining old community controls on the published site are now intentionally blocked by the backend. It blocks retired artwork/discussion/notification APIs and private submission storage, restricts profiles and archive asset writes to admins, and revokes old security-definer participation RPCs. It preserves all users, roles, records and files. The existing public `community-art` bucket serves archive portraits/audio too: do not delete or globally privatize it. Existing public file URLs and previously downloaded copies are not revoked; existing private signed URLs may remain valid until expiry.
+
+**Provider-side registration is now disabled live** (`disable_signup=true`), confirmed by a fresh Auth configuration read. Email sign-in remains enabled and production/recovery redirect URLs are unchanged. This does not disable existing admin sign-in or recovery. No real passwords were changed or recovery emails sent. Custom SMTP is still unconfigured; real recovery-email delivery remains unverified.
+
+Live post-migration assertions passed under anonymous and authenticated-admin database roles: public archive/assets remain readable, retired content is hidden, retired participation/moderation RPC execution is revoked, and the admin profile RPC remains executable. All eight restrictive policies are installed. Before/after counts match exactly: **2 users, 2 admin roles, 5 archive rows, 35 storage objects, 3 artwork rows, 0 comments and 4 notification rows**. Bucket visibility is unchanged. Auth, database, REST and storage report healthy. Admin asset upload checks used isolated local PostgreSQL rather than creating/deleting live files.
+
+## Current checks
+
+```sh
+npm test
+npx tsc --noEmit
+npm run build
+npm run test:ssr
+# Start a dev server separately; use its actual port:
+NODE_PATH=/home/user/.cache/gsn-browser/node_modules GSN_TEST_ORIGIN=http://127.0.0.1:8080 node tests/archive-only.acceptance.cjs
+NODE_PATH=/home/user/.cache/gsn-browser/node_modules GSN_TEST_ORIGIN=http://127.0.0.1:8080 node tests/recovery-crop.acceptance.cjs
+```
+
+Verified locally: **72 tests passed**, TypeScript and production build passed, raw-HTTP SSR smoke passed, and both archive-only and recovery/crop Chromium runners passed. Targeted lint has no errors (existing mixed component/helper exports in VoiceComms produce Fast Refresh warnings).
+
+The archive-only database test applies **all** migrations to isolated PostgreSQL, tests anonymous/member/admin access, verifies that retired APIs fail, that stored records remain and that admin archive/avatar uploads work. Older migration-contract tests intentionally stop before the retirement migration. Browser runners intercept Supabase requests with fake sessions: no live uploads, emails, password changes or archive edits. The obsolete community browser runner has been replaced by `archive-only.acceptance.cjs`.
+
+Optional Linux browser tooling: `npm install --prefix /home/user/.cache/gsn-browser --no-package-lock --ignore-scripts --maxsockets=1 playwright-core @sparticuz/chromium`. It is not committed. The archive runner checks hover/focus/no shift, retired routes, retained staff settings, missing sign-up UI, actual sequential Audio calls and touch navigation; the recovery/crop runner checks retained account/editor workflows.
+
+---
+
+# Historical release notes (not current feature availability)
+
 # Safety update: rollout and testing
 
 ## Apply the database migration first
