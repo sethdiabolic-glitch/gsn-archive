@@ -157,11 +157,17 @@ const path = require("node:path");
       () => Math.round(document.querySelector(".sidebar").getBoundingClientRect().width) === 72,
     );
     const left = (await main.boundingBox()).x;
-    await rail.hover();
+    await rail.hover({ position: { x: 65, y: 180 } });
+    await page.waitForTimeout(450); // Longer than the expansion transition/delay.
+    assert.equal(Math.round((await rail.boundingBox()).width), 72);
+    await page.locator('.sidebar .brand-logo').hover();
     await page.waitForFunction(
       () => Math.round(document.querySelector(".sidebar").getBoundingClientRect().width) === 248,
     );
     assert.equal((await main.boundingBox()).x, left);
+    await rail.hover({ position: { x: 180, y: 200 } });
+    assert.equal(Math.round((await rail.boundingBox()).width), 248);
+    assert.equal(await rail.evaluate(el => getComputedStyle(el).scrollbarWidth), 'none');
     await page.mouse.move(900, 800);
     await page.waitForFunction(
       () => Math.round(document.querySelector(".sidebar").getBoundingClientRect().width) === 72,
