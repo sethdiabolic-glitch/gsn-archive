@@ -149,6 +149,7 @@ function AppContent({ initialArchive }: { initialArchive?: PublicArchive | null 
   const [lastSync, setLastSync] = useState(() => { try { return localStorage.getItem('gsnArenaLastSync') || ''; } catch { return ''; } });
   const [aliases, setAliases] = useState<Array<{ category: string; name: string; entry_id: string }>>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [toast, setToast] = useState('');
@@ -294,11 +295,11 @@ function AppContent({ initialArchive }: { initialArchive?: PublicArchive | null 
 
   return (
     <ArchiveReferences entries={allEntries(data).map(({ item, category }) => ({ ...item, category }))} aliases={aliases} navigate={setLocation}><div className="app-shell">
-      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+      <aside className={`sidebar ${sidebarOpen ? 'open' : ''} ${desktopSidebarOpen ? 'desktop-expanded' : ''}`} onPointerLeave={() => setDesktopSidebarOpen(false)}>
         <button className="sidebar-close" type="button" aria-label="Close navigation" onClick={() => setSidebarOpen(false)}><X size={18} /></button>
         <div className="brand-block">
           <div className="brand-line">
-            <img className="brand-logo" src="/gsn-logo.png" alt="GSN Arena" />
+            <img className="brand-logo" src="/gsn-logo.png" alt="GSN Arena" onPointerEnter={(event) => { if (event.pointerType === 'mouse' && window.matchMedia('(min-width: 721px) and (hover: hover) and (pointer: fine)').matches) setDesktopSidebarOpen(true); }} />
             <div className="brand-name">GSN <span>ARENA</span></div>
           </div>
           <p className="brand-sub">Intelligence archive / v19.04</p>
