@@ -52,7 +52,7 @@ try {
   assert.ok(html.includes("Unique SSR evidence"));
   assert.ok(html.includes("Unique hypothetical evidence remains in HTML."));
   assert.ok(html.includes("Hypothetical Summary"));
-  assert.ok(html.includes('href="/comments/test"'));
+  assert.ok(!html.includes('href="/comments/test"'));
   assert.ok(!html.includes("DO-NOT-PUBLISH-THIS"));
   assert.ok(!html.includes("Loading <!-- -->archive"));
   const category = await (await nativeFetch(`${origin}/characters`)).text();

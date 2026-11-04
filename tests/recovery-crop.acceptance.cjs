@@ -62,6 +62,7 @@ const path = require("node:path");
         { key: `sb-${project}-auth-token`, session },
       );
     const page = await context.newPage();
+    await page.mouse.move(1100, 20);
     page.on("pageerror", (e) => errors.push(e.message));
     let profile = { user_id: id, username: "CropTester", avatar_path: null };
     await page.route(url + "/**", async (route) => {
@@ -125,11 +126,19 @@ const path = require("node:path");
   try {
     let { context, page } = await setup();
     await page.goto(base + "/profile");
+    await page.mouse.move(1100, 20);
+    await page.waitForFunction(
+      () =>
+        !document.querySelector(".sidebar") ||
+        innerWidth <= 720 ||
+        (Math.round(document.querySelector(".sidebar").getBoundingClientRect().width) === 72 &&
+          !document.querySelector(".sidebar").matches(":hover")),
+    );
     await page.waitForFunction(() => {
       const b = document.querySelector(".topbar button.btn");
       return b && Object.keys(b).some((k) => k.startsWith("__reactProps"));
     });
-    await page.getByRole("button", { name: "Sign in", exact: true }).first().click();
+    await page.getByRole("button", { name: "Admin sign in", exact: true }).last().click();
     await page.getByRole("button", { name: "Forgot password?", exact: true }).click();
     await page.getByLabel("Email", { exact: true }).fill("fixture@example.com");
     await page.getByRole("button", { name: "Send recovery email", exact: true }).click();
@@ -140,6 +149,14 @@ const path = require("node:path");
     await context.close();
     ({ context, page } = await setup());
     await page.goto(base + "/reset-password");
+    await page.mouse.move(1100, 20);
+    await page.waitForFunction(
+      () =>
+        !document.querySelector(".sidebar") ||
+        innerWidth <= 720 ||
+        (Math.round(document.querySelector(".sidebar").getBoundingClientRect().width) === 72 &&
+          !document.querySelector(".sidebar").matches(":hover")),
+    );
     await page
       .getByText("This recovery link is missing, expired or already used.", { exact: false })
       .waitFor();
@@ -155,6 +172,14 @@ const path = require("node:path");
       type: "recovery",
     });
     await page.goto(base + "/reset-password#" + hash);
+    await page.mouse.move(1100, 20);
+    await page.waitForFunction(
+      () =>
+        !document.querySelector(".sidebar") ||
+        innerWidth <= 720 ||
+        (Math.round(document.querySelector(".sidebar").getBoundingClientRect().width) === 72 &&
+          !document.querySelector(".sidebar").matches(":hover")),
+    );
     await page.getByLabel("New password", { exact: true }).waitFor();
     assert.equal(new URL(page.url()).hash, "");
     await page.getByLabel("New password", { exact: true }).fill("fixture-password-only");
@@ -172,6 +197,14 @@ const path = require("node:path");
     await context.close();
     ({ context, page } = await setup(true));
     await page.goto(base + "/profile");
+    await page.mouse.move(1100, 20);
+    await page.waitForFunction(
+      () =>
+        !document.querySelector(".sidebar") ||
+        innerWidth <= 720 ||
+        (Math.round(document.querySelector(".sidebar").getBoundingClientRect().width) === 72 &&
+          !document.querySelector(".sidebar").matches(":hover")),
+    );
     await page.getByRole("heading", { name: "CropTester", exact: true }).waitFor();
     await page.getByRole("button", { name: "Edit profile", exact: true }).click();
     const png = Buffer.from(
@@ -259,6 +292,14 @@ const path = require("node:path");
     await page.getByText("The passwords do not match.", { exact: true }).waitFor();
     await page.setViewportSize({ width: 1280, height: 1000 });
     await page.goto(base + "/entry/characters/Anis");
+    await page.mouse.move(1100, 20);
+    await page.waitForFunction(
+      () =>
+        !document.querySelector(".sidebar") ||
+        innerWidth <= 720 ||
+        (Math.round(document.querySelector(".sidebar").getBoundingClientRect().width) === 72 &&
+          !document.querySelector(".sidebar").matches(":hover")),
+    );
     await page.getByTestId("button-edit-dossier").click();
     await page.getByRole("button", { name: "Change portrait image", exact: true }).waitFor();
     await page

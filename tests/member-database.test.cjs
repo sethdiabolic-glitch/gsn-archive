@@ -12,7 +12,11 @@ test("member permissions: identities, comment threads, notifications, notices an
   await db.exec(
     `create role anon; create role authenticated; create role service_role;create schema auth;create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;create schema storage;create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text);alter table storage.objects enable row level security;create function storage.foldername(text) returns text[] language sql as $$select string_to_array($1,'/')$$;grant usage on schema auth,storage to anon,authenticated;grant select on storage.objects to anon,authenticated;grant insert,delete on storage.objects to authenticated;`,
   );
-  for (const f of fs.readdirSync("supabase/migrations").sort())
+  // Historical migration contract; the archive-only release has its own full-chain test.
+  for (const f of fs
+    .readdirSync("supabase/migrations")
+    .filter((file) => file < "20261104100000")
+    .sort())
     await db.exec(fs.readFileSync("supabase/migrations/" + f, "utf8"));
   await db.exec(
     `insert into auth.users values('${admin}'),('${owner}'),('${other}');insert into user_roles(user_id,role)values('${admin}','admin');insert into archive_entries(category,name,data)values('characters','Comment entry','{}'),('settings','private','{}');`,

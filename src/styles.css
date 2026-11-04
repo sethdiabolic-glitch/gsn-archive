@@ -921,3 +921,21 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .upload-actions{display:flex;justify-content:flex-end;gap:10px;position:sticky;bottom:0;padding:12px 0;background:linear-gradient(transparent,var(--bg,#000) 40%)}
 @media (max-width:640px){.upload-fields{grid-template-columns:1fr}.upload-card{padding:14px}.upload-grid{grid-template-columns:1fr}.upload-actions .btn{flex:1}}
 .editor-color{width:30px;height:30px;padding:0;border:1px solid var(--line);background:none;cursor:pointer}
+
+/* Desktop: a stable icon rail expands over content, never shifting the document. */
+@media (min-width: 721px) and (hover: hover) and (pointer: fine) {
+  .sidebar { width: 72px; flex-basis: 72px; overflow-x: hidden; transition: width .2s ease .12s; }
+  .sidebar:hover, .sidebar:has(:focus-visible) { width: 248px; box-shadow: 16px 0 38px var(--shadow); }
+  .sidebar:has(:focus-visible) { transition-delay: 0s; }
+  .main-wrap { width: calc(100% - 72px); margin-left: 72px; }
+  .sidebar .brand-block { padding-left: 16px; padding-right: 16px; }
+  .sidebar .brand-line { width: 216px; }
+  .sidebar .brand-name, .sidebar .brand-sub, .sidebar .nav-label, .sidebar .nav-text, .sidebar .nav-count, .sidebar .nav-chevron { opacity: 0; transition: opacity .12s ease; }
+  .sidebar .nav-item { width: 224px; }
+  .sidebar .sidebar-foot { width: 248px; visibility: hidden; }
+  .sidebar:hover :is(.brand-name,.brand-sub,.nav-label,.nav-text,.nav-count,.nav-chevron), .sidebar:has(:focus-visible) :is(.brand-name,.brand-sub,.nav-label,.nav-text,.nav-count,.nav-chevron) { opacity: 1; }
+  .sidebar:hover .sidebar-foot, .sidebar:has(:focus-visible) .sidebar-foot { visibility: visible; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar, .sidebar *, .nav-item::before, .nav-item::after { transition: none !important; animation: none !important; }
+}

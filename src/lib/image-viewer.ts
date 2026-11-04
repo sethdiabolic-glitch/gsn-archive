@@ -25,14 +25,14 @@ export function safeImageBack(value: unknown): string {
     value.startsWith("//") ||
     value.includes("\\")
   )
-    return "/community";
+    return "/";
   try {
     const base = "https://archive.invalid";
     const url = new URL(value, base);
-    if (url.origin !== base || url.pathname === "/image") return "/community";
+    if (url.origin !== base || url.pathname === "/image") return "/";
     return url.pathname + url.search + url.hash;
   } catch {
-    return "/community";
+    return "/";
   }
 }
 export function imageSearch(search: Record<string, unknown>): ImageView {

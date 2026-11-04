@@ -19,7 +19,6 @@ export const SECTIONS = [
   ["appendix", "Appendix"],
   ["tier-list", "Tier list"],
   ["compare", "Compare units"],
-  ["community", "Community art"],
   ["terms", "Terms of Use"],
 ] as const;
 
@@ -87,7 +86,7 @@ export function sitemapXml(rows: PublicRow[]): string {
 }
 export function llmsText(rows: PublicRow[]): string {
   let out =
-    "# GSN Arena — Intelligence Archive\n\n> Community-maintained GODDESS OF VICTORY: NIKKE dossiers, feats, theories and references.\n\n## Sections\n";
+    "# GSN Arena — Intelligence Archive\n\n> Team-maintained GODDESS OF VICTORY: NIKKE dossiers, feats, theories and references.\n\n## Sections\n";
   for (const [slug, label] of SECTIONS) out += `- [${label}](${BASE_URL}/${slug})\n`;
   for (const category of PUBLIC_CATEGORIES) {
     const entries = rows.filter((row) => row.category === category);
