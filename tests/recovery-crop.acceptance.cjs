@@ -131,7 +131,7 @@ const path = require("node:path");
       () =>
         !document.querySelector(".sidebar") ||
         innerWidth <= 720 ||
-        (Math.round(document.querySelector(".sidebar").getBoundingClientRect().width) === 72 &&
+        (document.querySelector(".sidebar").getBoundingClientRect().right <= 0 &&
           !document.querySelector(".sidebar").matches(":hover")),
     );
     await page.waitForFunction(() => {
@@ -154,7 +154,7 @@ const path = require("node:path");
       () =>
         !document.querySelector(".sidebar") ||
         innerWidth <= 720 ||
-        (Math.round(document.querySelector(".sidebar").getBoundingClientRect().width) === 72 &&
+        (document.querySelector(".sidebar").getBoundingClientRect().right <= 0 &&
           !document.querySelector(".sidebar").matches(":hover")),
     );
     await page
@@ -177,7 +177,7 @@ const path = require("node:path");
       () =>
         !document.querySelector(".sidebar") ||
         innerWidth <= 720 ||
-        (Math.round(document.querySelector(".sidebar").getBoundingClientRect().width) === 72 &&
+        (document.querySelector(".sidebar").getBoundingClientRect().right <= 0 &&
           !document.querySelector(".sidebar").matches(":hover")),
     );
     await page.getByLabel("New password", { exact: true }).waitFor();
@@ -202,7 +202,7 @@ const path = require("node:path");
       () =>
         !document.querySelector(".sidebar") ||
         innerWidth <= 720 ||
-        (Math.round(document.querySelector(".sidebar").getBoundingClientRect().width) === 72 &&
+        (document.querySelector(".sidebar").getBoundingClientRect().right <= 0 &&
           !document.querySelector(".sidebar").matches(":hover")),
     );
     await page.getByRole("heading", { name: "CropTester", exact: true }).waitFor();
@@ -297,7 +297,7 @@ const path = require("node:path");
       () =>
         !document.querySelector(".sidebar") ||
         innerWidth <= 720 ||
-        (Math.round(document.querySelector(".sidebar").getBoundingClientRect().width) === 72 &&
+        (document.querySelector(".sidebar").getBoundingClientRect().right <= 0 &&
           !document.querySelector(".sidebar").matches(":hover")),
     );
     await page.getByTestId("button-edit-dossier").click();

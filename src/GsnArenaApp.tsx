@@ -295,11 +295,12 @@ function AppContent({ initialArchive }: { initialArchive?: PublicArchive | null 
 
   return (
     <ArchiveReferences entries={allEntries(data).map(({ item, category }) => ({ ...item, category }))} aliases={aliases} navigate={setLocation}><div className="app-shell">
-      <aside className={`sidebar ${sidebarOpen ? 'open' : ''} ${desktopSidebarOpen ? 'desktop-expanded' : ''}`} onPointerLeave={() => setDesktopSidebarOpen(false)}>
+      <button className="desktop-nav-trigger" type="button" aria-label="Open desktop navigation" aria-expanded={desktopSidebarOpen} aria-controls="archive-navigation" onPointerEnter={(event) => { if (event.pointerType === 'mouse') setDesktopSidebarOpen(true); }} onPointerLeave={(event) => { if (!(event.relatedTarget instanceof Node) || !document.getElementById('archive-navigation')?.contains(event.relatedTarget)) setDesktopSidebarOpen(false); }} onFocus={() => setDesktopSidebarOpen(true)} onClick={() => setDesktopSidebarOpen(true)} onBlur={(event) => { if (!document.getElementById('archive-navigation')?.contains(event.relatedTarget as Node | null)) setDesktopSidebarOpen(false); }}><img src="/gsn-logo.png" alt="" /></button>
+      <aside id="archive-navigation" className={`sidebar ${sidebarOpen ? 'open' : ''} ${desktopSidebarOpen ? 'desktop-expanded' : ''}`} onPointerLeave={() => setDesktopSidebarOpen(false)} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null) && !event.currentTarget.matches(':hover')) setDesktopSidebarOpen(false); }}>
         <button className="sidebar-close" type="button" aria-label="Close navigation" onClick={() => setSidebarOpen(false)}><X size={18} /></button>
         <div className="brand-block">
           <div className="brand-line">
-            <img className="brand-logo" src="/gsn-logo.png" alt="GSN Arena" onPointerEnter={(event) => { if (event.pointerType === 'mouse' && window.matchMedia('(min-width: 721px) and (hover: hover) and (pointer: fine)').matches) setDesktopSidebarOpen(true); }} />
+            <img className="brand-logo" src="/gsn-logo.png" alt="GSN Arena" />
             <div className="brand-name">GSN <span>ARENA</span></div>
           </div>
           <p className="brand-sub">Intelligence archive / v19.04</p>
