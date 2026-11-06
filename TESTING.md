@@ -2,7 +2,7 @@
 
 This section supersedes the historical release notes below, especially gallery, public accounts, moderation, discussions and notification instructions. Those features are retired; do not use their old acceptance checklists.
 
-- Desktop fine-pointer navigation is a 72px icon rail expanding to 248px on hover or **keyboard-visible focus**. It overlays content without shifting it. Mouse-click focus does not pin the sidebar open. No pin/toggle was added. Touch/mobile retains its existing menu and backdrop controls. Reduced-motion preferences disable rail transitions.
+- Desktop fine-pointer navigation now hides its entire 248px panel off-screen when closed, leaving only a floating GSN icon. The icon opens the panel on hover or focus; moving within the panel keeps it open. A transparent 72px content gutter leaves space for the icon without showing a rail. It overlays content without shifting it. No pin/toggle was added. Touch/mobile retains its existing menu and backdrop controls. Reduced-motion preferences disable rail transitions.
 - Dossier voice lines play in stored order, independently per dossier, wrapping after the last line. The cursor is session-local and resets on reload or a changed line list. Muted visits do not consume a line. Selection is deferred/cancelled safely across React's development effect checks; delayed data loads can play the first line after loading. Compare retains its dedicated victory line.
 - Removed gallery, submissions, moderation, My Images/activity, comments, private notifications, public profiles and sign-up controls from the app. Old participation routes show File not found; old artwork-ID viewers are unavailable. Public archive image viewers, dossier images/audio editing, admin sign-in/settings/recovery, default GSN avatars, manual cropping and site notices remain.
 
@@ -230,3 +230,10 @@ Final local verification for the account-system update: **64 tests passed**, Typ
 ## Icon-only sidebar hover correction
 
 Desktop expansion now starts only when the pointer enters the GSN logo icon, not from hovering the rail background, edge, or navigation rows. It stays open while the pointer is inside the panel and collapses on pointer leave. Keyboard-visible focus still expands the navigation. Hidden scrollbars and touch/mobile navigation remain unchanged.
+
+
+## Fully hidden panel correction — 2026-11-06
+
+The earlier PR8 change retained a visible 72px rail. This correction removes that rail entirely: the closed panel is translated completely off-screen, with visibility hidden and no shadow. The separate GSN icon remains reachable even after scrolling the panel. Its pointer-leave handler also closes the panel when the pointer goes straight from the icon back to the page. The mobile menu remains unchanged.
+
+The updated Chromium runner verifies panel right edge <=0, hidden visibility and no sidebar hit target at the left page edge; hovering that edge cannot open it. It verifies icon hover opening, no content shift, actual wheel scrolling in an overflowing short viewport with hidden scrollbars, reopening after scroll, keyboard Tab from icon into navigation and closing on focus exit, and mobile open/close. Both archive-only and retained recovery/crop browser suites passed with mocked services and no live writes.

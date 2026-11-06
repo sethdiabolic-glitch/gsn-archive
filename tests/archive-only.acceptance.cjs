@@ -152,34 +152,40 @@ const path = require("node:path");
     );
     const rail = page.locator(".sidebar");
     const main = page.locator(".main-wrap");
+    const closed = () => { const el=document.querySelector('.sidebar'); return el.getBoundingClientRect().right <= 0 && getComputedStyle(el).visibility === 'hidden'; };
+    const opened = () => Math.round(document.querySelector('.sidebar').getBoundingClientRect().x) === 0;
     await page.mouse.move(900, 800);
-    await page.waitForFunction(
-      () => Math.round(document.querySelector(".sidebar").getBoundingClientRect().width) === 72,
-    );
+    await page.waitForFunction(closed);
     const left = (await main.boundingBox()).x;
-    await rail.hover({ position: { x: 65, y: 180 } });
-    await page.waitForTimeout(450); // Longer than the expansion transition/delay.
-    assert.equal(Math.round((await rail.boundingBox()).width), 72);
-    await page.locator('.sidebar .brand-logo').hover();
-    await page.waitForFunction(
-      () => Math.round(document.querySelector(".sidebar").getBoundingClientRect().width) === 248,
-    );
+    await page.mouse.move(65, 180);
+    await page.waitForTimeout(450);
+    assert.ok(await page.evaluate(closed), 'No rail should protrude or open at the left edge');
+    assert.ok(await page.evaluate(() => !document.elementFromPoint(1,180)?.closest('.sidebar')));
+    await page.getByRole('button', {name:'Open desktop navigation',exact:true}).hover();
+    await page.waitForFunction(opened);
     assert.equal((await main.boundingBox()).x, left);
     await rail.hover({ position: { x: 180, y: 200 } });
-    assert.equal(Math.round((await rail.boundingBox()).width), 248);
     assert.equal(await rail.evaluate(el => getComputedStyle(el).scrollbarWidth), 'none');
-    await page.mouse.move(900, 800);
-    await page.waitForFunction(
-      () => Math.round(document.querySelector(".sidebar").getBoundingClientRect().width) === 72,
-    );
-    await rail.getByRole("link", { name: "Overview", exact: true }).focus();
-    await page.waitForFunction(
-      () => Math.round(document.querySelector(".sidebar").getBoundingClientRect().width) === 248,
-    );
-    await page.locator(".search-trigger").focus();
-    await page.waitForFunction(
-      () => Math.round(document.querySelector(".sidebar").getBoundingClientRect().width) === 72,
-    );
+    await page.setViewportSize({width:1280,height:420});
+    await rail.hover({position:{x:180,y:220}});
+    await page.mouse.wheel(0,500);
+    await page.waitForFunction(()=>document.querySelector('.sidebar').scrollTop>0);
+    assert.ok(await rail.evaluate(el=>el.scrollHeight>el.clientHeight), 'Test actual overflowing navigation');
+    await page.mouse.move(900, 300);
+    await page.waitForFunction(closed);
+    await page.getByRole('button',{name:'Open desktop navigation',exact:true}).hover();
+    await page.waitForFunction(opened);
+    await rail.evaluate(el=>el.scrollTop=0);
+    await page.setViewportSize({width:1280,height:1000});
+    await page.mouse.move(900,800);
+    await page.waitForFunction(closed);
+    await page.getByRole('button',{name:'Open desktop navigation',exact:true}).focus();
+    await page.waitForFunction(opened);
+    await page.keyboard.press('Tab');
+    assert.equal(await rail.evaluate(el=>el.contains(document.activeElement)),true);
+    await page.locator('.search-trigger').focus();
+    await page.waitForFunction(closed);
+    await page.screenshot({path:'/home/user/sidebar-closed.png'});
     assert.equal(
       (await page.locator("body").innerText()).toLowerCase().includes("community"),
       false,
